@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Alle mot Daniel PRO</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "DIN_API_KEY",
+  authDomain: "DIN_APP.firebaseapp.com",
+  projectId: "DIN_PROJECT_ID",
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const mode = new URLSearchParams(window.location.search).get("mode") || "player";
+let player = localStorage.getItem("player") || "";
+let round = 0;
+let locked = false;
+
+const questions = [
+  "Bottle flips (0-15)",
+  "Straffespark (0-20)",
+  "Oppgave 3",
+  "Oppgave 4",
+  "Oppgave 5",
+  "Oppgave 6",
+  "Oppgave 7",
+  "Oppgave 8"
+];
+
+function show(id){
+  document.querySelectorAll(".view").forEach(v=>v.style.display="none");
+  document.getElementById(id).style.display="block";
+}
+
+if(mode === "admin") show("admin");
+else if(mode === "screen") show("screen");
+else show(player ? "player" : "login");
+
+// JOIN
+window.joinGame = async () => {
+  const name = document.getElementById("name").value;
+  if(!name) return alert("Skriv navn");
+  player = name;
+  localStorage.setItem("player", name);
+  await setDoc(doc(db,"players",name),{name,total:0});
+  show("player");
+};
+
+// SEND SVAR
+window.submitAnswer = async () => {
+  if(locked) return alert("Svar er låst!");
+  const val = Number(document.getElementById("answer").value);
+  if(!val) return;
+  await addDoc(collection(db,"answers"),{name:player,value:val,round});
+  document.getElementById("answer").value="";
+};
+
+// ADMIN
+window.nextRound = ()=>{
+  round++;
+  locked = false;
+  document.getElementById("qAdmin").innerText = questions[round] || "Ferdig";
+};
+
+window.lockAnswers = ()=>{
+  locked = true;
+};
+
+window.setCorrect = async ()=>{
+  const correct = Number(document.getElementById("correct").value);
+  const daniel = Number(document.getElementById("daniel").value);
+
+  const snap = await getDocs(collection(db,"answers"));
+
+  snap.forEach(async d=>{
+    const data = d.data();
+    if(data.round===round){
+      const diff = Math.abs(data.value-correct);
+      const ref = doc(db,"players",data.name);
+      await updateDoc(ref,{total: (data.total||0)+diff}).catch(()=>{});
+    }
+  });
+
+  // Daniel
+  await setDoc(doc(db,"players","Daniel"),{
+    name:"Daniel",
+    total: Math.abs(daniel-correct)
+  },{merge:true});
+};
+
+// GRAF
+let chart;
+window.onload = ()=>{
+  const ctx = document.getElementById("chart");
+  if(ctx){
+    chart = new Chart(ctx,{type:'scatter',data:{datasets:[{label:"Svar",data:[]},{label:"Daniel",data:[]}]},options:{scales:{x:{type:'linear'},y:{display:false}}}});
+  }
+  document.querySelectorAll(".q").forEach(e=>e.innerText=questions[0]);
+};
+
+onSnapshot(collection(db,"answers"),snap=>{
+  let arr=[];
+  snap.forEach(d=>{
+    const data=d.data();
+    if(data.round===round) arr.push(data.value);
+  });
+
+  if(chart){
+    chart.data.datasets[0].data = arr.map(v=>({x:v,y:0}));
+    chart.update();
+  }
+
+  if(arr.length){
+    const avg = arr.reduce((a,b)=>a+b,0)/arr.length;
+    document.getElementById("avg").innerText = "Snitt: "+avg.toFixed(1);
+  }
+});
+
+onSnapshot(collection(db,"players"),snap=>{
+  let best=null;
+  let danielScore=null;
+
+  snap.forEach(d=>{
+    const p=d.data();
+    if(p.name==="Daniel") danielScore=p.total;
+    if(!best || (p.total||9999)<best.total) best=p;
+  });
+
+  if(best){
+    document.querySelectorAll(".winner").forEach(e=>e.innerText="🏆 "+best.name+" leder");
+  }
+
+  if(danielScore!==null){
+    document.getElementById("duel").innerText = danielScore < (best?.total||9999)
+      ? "🔥 Daniel slår publikum!"
+      : "👥 Publikum slår Daniel!";
+  }
+});
+</script>
+
+<style>
+body{font-family:Arial;background:#111;color:white;text-align:center}
+.view{display:none;padding:20px}
+input,button{padding:10px;margin:5px}
+</style>
+</head>
+<body>
+
+<div id="login" class="view">
+<h1>Alle mot Daniel</h1>
+<input id="name" placeholder="Kallenavn">
+<button onclick="joinGame()">Bli med</button>
+</div>
+
+<div id="player" class="view">
+<h2 class="q"></h2>
+<input id="answer" type="number" placeholder="Svar">
+<button onclick="submitAnswer()">Send</button>
+</div>
+
+<div id="admin" class="view">
+<h2 id="qAdmin"></h2>
+<input id="correct" type="number" placeholder="Fasit">
+<input id="daniel" type="number" placeholder="Daniel sitt svar">
+<br>
+<button onclick="lockAnswers()">Lås svar</button>
+<button onclick="setCorrect()">Sett fasit</button>
+<button onclick="nextRound()">Neste</button>
+<h2 class="winner"></h2>
+<h2 id="duel"></h2>
+</div>
+
+<div id="screen" class="view">
+<h1 class="q"></h1>
+<canvas id="chart"></canvas>
+<h2 id="avg"></h2>
+<h2 class="winner"></h2>
+<h2 id="duel"></h2>
+</div>
+
+</body>
+</html>
