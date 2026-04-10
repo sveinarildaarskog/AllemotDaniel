@@ -1,25 +1,53 @@
 <!DOCTYPE html>
 <html lang="no">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alle mot Daniel - FINAL STABLE</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Alle mot Daniel</title>
 
-<!-- QR LIB -->
-<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<!-- QR LIB (STABIL) -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
 <style>
-body{font-family:Arial;background:#111;color:white;text-align:center;margin:0}
+body{
+  margin:0;
+  font-family:Arial;
+  background:#111;
+  color:white;
+  text-align:center;
+}
+
 .view{display:none;padding:20px}
-input,select,button{padding:10px;margin:5px;font-size:16px}
+
+/* KAHOOT STYLE QR */
+.qr-card{
+  background:white;
+  color:black;
+  width:320px;
+  margin:30px auto;
+  padding:20px;
+  border-radius:20px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.5);
+}
+
+#qr{
+  width:280px !important;
+  height:280px !important;
+}
+
+button,input,select{
+  padding:10px;
+  margin:5px;
+  font-size:16px;
+}
+
 .slider{width:80%}
-canvas{background:white;border-radius:12px;margin-top:10px}
-#players div{padding:5px;border-bottom:1px solid #333}
 </style>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot } 
+from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDE7WQY2NZ8ZgAvD8Rm1Mq_owxddA8LHQM",
@@ -31,73 +59,77 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
+
 let player = localStorage.getItem("player") || "";
 let role = localStorage.getItem("role") || "player";
 let round = 0;
 let locked = false;
 
-const questions = [
-  "Sengestrekk",
-  "Straffespark",
-  "Bottle flip",
-  "Vannpistol og telys",
-  "Biola bånnski",
-  "Vann på hodet",
-  "Triksekongen",
-  "Frisbeekast"
-];
-
+/* ---------- VIEW SYSTEM ---------- */
 function show(id){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   document.getElementById(id).style.display="block";
 }
 
-// ROUTING
-window.addEventListener("load", () => {
-  if(mode === "admin") show("adminLobby");
-  else show(player ? "game" : "login");
-
-  if(mode === "admin") generateQR();
+/* ---------- INIT ---------- */
+window.addEventListener("DOMContentLoaded", () => {
+  if(mode === "admin"){
+    show("adminLobby");
+    generateQR();
+  } else {
+    show("login");
+  }
 });
 
-// QR GENERATOR (SAFE)
+/* ---------- QR (KAHOOT STYLE FIXED) ---------- */
 function generateQR(){
+
   const url = window.location.origin + window.location.pathname + "?mode=join";
 
   const canvas = document.getElementById("qr");
   const link = document.getElementById("joinLink");
 
-  if(!canvas) return;
+  if(!canvas){
+    console.log("QR canvas mangler");
+    return;
+  }
 
   link.innerText = url;
 
-  QRCode.toCanvas(canvas, url, function (err) {
-    if(err) console.error("QR error", err);
+  QRCode.toCanvas(canvas, url, {
+    width: 280,
+    color: {
+      dark:"#000000",
+      light:"#ffffff"
+    }
+  }, function (err) {
+    if(err) console.error("QR error:", err);
+    else console.log("QR OK");
   });
 }
 
-// JOIN
+/* ---------- JOIN ---------- */
 window.join = async () => {
   const name = document.getElementById("name").value;
   const selectedRole = document.getElementById("role").value;
+
   if(!name) return alert("Skriv kallenavn");
 
   player = name;
   role = selectedRole;
 
   localStorage.setItem("player", name);
-  localStorage.setItem("role", selectedRole);
+  localStorage.setItem("role", role);
 
   await setDoc(doc(db,"players",name),{
     name,
-    role,
-    score:0
+    role
   });
 
   show("game");
 };
 
-// ANSWER
+/* ---------- ANSWER ---------- */
 window.sendAnswer = async () => {
   if(locked) return alert("Låst");
 
@@ -111,7 +143,7 @@ window.sendAnswer = async () => {
   });
 };
 
-// TIMER
+/* ---------- TIMER ---------- */
 window.startTimer = () => {
   locked = false;
   let t = 30;
@@ -121,6 +153,7 @@ window.startTimer = () => {
   const i = setInterval(()=>{
     el.innerText = "Tid: " + t;
     t--;
+
     if(t < 0){
       clearInterval(i);
       locked = true;
@@ -128,18 +161,19 @@ window.startTimer = () => {
   },1000);
 };
 
-// NEXT
+/* ---------- NEXT ---------- */
 window.next = () => {
   round++;
-  document.getElementById("questionTitle").innerText = questions[round] || "Ferdig";
+  document.getElementById("questionTitle").innerText = "Runde " + (round+1);
 };
 
-// PLAYER LIST
+/* ---------- PLAYERS LIVE ---------- */
 onSnapshot(collection(db,"players"),snap=>{
   const list = document.getElementById("players");
   if(!list) return;
 
   list.innerHTML = "";
+
   snap.forEach(d=>{
     const p = d.data();
     list.innerHTML += `<div>${p.name} (${p.role})</div>`;
@@ -148,51 +182,57 @@ onSnapshot(collection(db,"players"),snap=>{
 
 </script>
 </head>
+
 <body>
 
 <!-- LOGIN -->
 <div id="login" class="view">
-<h1>Alle mot Daniel</h1>
-<input id="name" placeholder="Kallenavn"><br>
-<select id="role">
-<option value="player">Deltaker</option>
-<option value="daniel">Daniel</option>
-</select><br>
-<button onclick="join()">Bli med</button>
+  <h1>Alle mot Daniel</h1>
+  <input id="name" placeholder="Kallenavn"><br>
+  <select id="role">
+    <option value="player">Deltaker</option>
+    <option value="daniel">Daniel</option>
+  </select><br>
+  <button onclick="join()">Bli med</button>
 </div>
 
-<!-- ADMIN -->
+<!-- ADMIN LOBBY (KAHOOT STYLE QR) -->
 <div id="adminLobby" class="view">
-<h1>Scan QR for å bli med</h1>
 
-<canvas id="qr" width="220" height="220"></canvas>
-<p id="joinLink"></p>
+  <h1>Scan QR for å bli med</h1>
 
-<h3>Deltakere</h3>
-<div id="players"></div>
+  <div class="qr-card">
+    <canvas id="qr"></canvas>
+    <p id="joinLink"></p>
+  </div>
 
-<button onclick="show('adminGame')">Start spillet</button>
+  <h3>Deltakere</h3>
+  <div id="players"></div>
+
+  <button onclick="show('adminGame')">Start spillet</button>
 </div>
 
 <!-- ADMIN GAME -->
 <div id="adminGame" class="view">
-<h1 id="questionTitle">Start spill</h1>
-<h2 id="timer">Tid: 30</h2>
-<button onclick="startTimer()">Nedtelling</button>
-<button onclick="next()">Neste</button>
+  <h1 id="questionTitle">Spill ikke startet</h1>
+  <h2 id="timer">Tid: 30</h2>
+  <button onclick="startTimer()">Start nedtelling</button>
+  <button onclick="next()">Neste</button>
 </div>
 
 <!-- GAME -->
 <div id="game" class="view">
-<h2>Gi svar</h2>
-<input type="range" min="0" max="100" value="50" id="slider" class="slider">
-<div id="val">50</div>
-<button onclick="sendAnswer()">Svar</button>
+  <h2>Gi svar</h2>
+
+  <input type="range" min="0" max="100" value="50" id="slider" class="slider">
+  <div id="val">50</div>
+
+  <button onclick="sendAnswer()">Svar</button>
 </div>
 
 <script>
 document.addEventListener("input", e=>{
-  if(e.target.id === "slider"){
+  if(e.target.id==="slider"){
     document.getElementById("val").innerText = e.target.value;
   }
 });
