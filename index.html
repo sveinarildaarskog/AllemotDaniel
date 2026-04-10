@@ -16,14 +16,6 @@ body{
 
 .view{display:none;padding:20px}
 
-.card{
-  background:#222;
-  padding:20px;
-  margin:20px auto;
-  max-width:500px;
-  border-radius:15px;
-}
-
 button,input,select{
   padding:10px;
   margin:5px;
@@ -49,12 +41,13 @@ import {
   setDoc,
   updateDoc,
   onSnapshot,
-  collection,
   getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+/* ---------------- FIREBASE ---------------- */
+
 const firebaseConfig = {
-  apiKey: "AIzaSyDE7WQY2NZ8ZgAvD8Rm1Mq_owxddA8LHQM",
+  apiKey: "AIzaSyDE7W...",
   authDomain: "alle-mot-konfirmanten.firebaseapp.com",
   projectId: "alle-mot-konfirmanten"
 };
@@ -62,10 +55,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+/* ---------------- MODE ---------------- */
+
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
 
 let player = localStorage.getItem("player") || "";
 let role = localStorage.getItem("role") || "player";
+
+/* ---------------- QUESTIONS ---------------- */
 
 const questions = [
   "Sengestrekk",
@@ -87,21 +84,13 @@ function show(id){
 
 /* ---------------- INIT ---------------- */
 
-window.addEventListener("load", async () => {
+window.addEventListener("load", () => {
 
-  listen();
+  listenGame();
 
   if(mode === "admin"){
-
-    // 🔥 ALWAYS RESET TO LOBBY
-    await setDoc(doc(db,"game","state"),{
-      gameState:"lobby",
-      currentRound:0
-    });
-
     show("adminLobby");
-    generateQR();
-
+    generateQR();   // 🔥 bare UI, ingen reset
   } else {
     show(player ? "player" : "login");
   }
@@ -119,7 +108,7 @@ function generateQR(){
 
 /* ---------------- LISTEN ---------------- */
 
-function listen(){
+function listenGame(){
   onSnapshot(doc(db,"game","state"), snap=>{
     if(!snap.exists()) return;
     render(snap.data());
@@ -132,7 +121,7 @@ function render(data){
 
   const q = questions[data.currentRound] || "Ferdig!";
 
-  // ---------------- ADMIN ----------------
+  /* ---------------- ADMIN ---------------- */
   if(mode === "admin"){
 
     document.getElementById("adminState").innerText =
@@ -140,7 +129,6 @@ function render(data){
 
     document.getElementById("currentQuestion").innerText = q;
 
-    // 🔥 FORCE LOBBY FIRST
     if(data.gameState === "lobby"){
       show("adminLobby");
     } else {
@@ -148,7 +136,7 @@ function render(data){
     }
   }
 
-  // ---------------- PLAYER ----------------
+  /* ---------------- PLAYER ---------------- */
   if(mode !== "admin"){
 
     const title = document.getElementById("title");
@@ -156,7 +144,7 @@ function render(data){
 
     if(data.gameState === "lobby"){
       show("player");
-      title.innerText = "Venter på at spillet starter...";
+      title.innerText = "Venter på start...";
       box.style.display = "none";
     }
 
@@ -272,7 +260,7 @@ window.next = async () => {
 </div>
 </div>
 
-<!-- ADMIN LOBBY (FIXED FRONT PAGE) -->
+<!-- ADMIN LOBBY (STABIL) -->
 <div id="adminLobby" class="view">
 <h1>Alle mot Daniel</h1>
 
