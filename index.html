@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alle mot Daniel - PRO STATE</title>
+<title>Alle mot Daniel - FIXED</title>
 
 <style>
 body{
@@ -16,12 +16,6 @@ body{
 
 .view{display:none;padding:20px}
 
-button,input,select{
-  padding:10px;
-  margin:5px;
-  font-size:16px;
-}
-
 .card{
   background:#222;
   padding:20px;
@@ -30,7 +24,21 @@ button,input,select{
   border-radius:15px;
 }
 
+button,input,select{
+  padding:10px;
+  margin:5px;
+  font-size:16px;
+}
+
 .slider{width:80%}
+
+.qr{
+  background:white;
+  padding:20px;
+  border-radius:20px;
+  width:320px;
+  margin:20px auto;
+}
 </style>
 
 <script type="module">
@@ -46,8 +54,6 @@ import {
   addDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-/* ---------------- FIREBASE ---------------- */
-
 const firebaseConfig = {
   apiKey: "AIzaSyDE7WQY2NZ8ZgAvD8Rm1Mq_owxddA8LHQM",
   authDomain: "alle-mot-konfirmanten.firebaseapp.com",
@@ -57,15 +63,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* ---------------- STATE ---------------- */
-
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
 
 let player = localStorage.getItem("player") || "";
 let role = localStorage.getItem("role") || "player";
 
-let gameState = "waiting";
-let currentRound = 0;
+let round = 0;
+let state = "waiting";
 
 /* ---------------- VIEW ---------------- */
 
@@ -77,11 +81,11 @@ function show(id){
 /* ---------------- INIT ---------------- */
 
 window.addEventListener("load", () => {
-
-  listenGameState();
+  listenState();
 
   if(mode === "admin"){
-    show("admin");
+    show("adminLobby");
+    generateQR();
   } else {
     show(player ? "player" : "login");
   }
@@ -89,61 +93,76 @@ window.addEventListener("load", () => {
 
 /* ---------------- GAME STATE ---------------- */
 
-function listenGameState(){
+function listenState(){
   onSnapshot(doc(db,"game","state"), snap=>{
     if(!snap.exists()) return;
 
     const data = snap.data();
-
-    gameState = data.gameState;
-    currentRound = data.currentRound;
+    state = data.gameState;
+    round = data.currentRound;
 
     renderPlayer(data);
     renderAdmin(data);
   });
 }
 
-/* ---------------- PLAYER UI ---------------- */
+/* ---------------- QR ---------------- */
 
-function renderPlayer(state){
+function generateQR(){
+  const url = window.location.origin + window.location.pathname + "?mode=join";
+
+  const img = document.getElementById("qr");
+  img.src = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(url);
+}
+
+/* ---------------- ADMIN SCREENS ---------------- */
+
+function renderAdmin(stateData){
+
+  if(mode !== "admin") return;
+
+  document.getElementById("adminState").innerText =
+    `State: ${stateData.gameState} | Runde: ${stateData.currentRound}`;
+
+  if(stateData.gameState === "waiting"){
+    show("adminLobby");
+  } else {
+    show("adminControl");
+  }
+}
+
+/* ---------------- PLAYER SCREENS ---------------- */
+
+function renderPlayer(stateData){
 
   if(mode === "admin") return;
 
   const title = document.getElementById("title");
   const box = document.getElementById("answerBox");
 
-  if(state.gameState === "waiting"){
+  if(stateData.gameState === "waiting"){
     show("player");
-    title.innerText = "Venter på neste oppgave...";
+    title.innerText = "Venter på oppgave...";
     box.style.display = "none";
   }
 
-  if(state.gameState === "question"){
+  if(stateData.gameState === "question"){
     show("player");
     title.innerText = "Oppgave vises snart...";
     box.style.display = "none";
   }
 
-  if(state.gameState === "answering"){
+  if(stateData.gameState === "answering"){
     show("player");
     title.innerText = "SVAR NÅ!";
     box.style.display = "block";
   }
 
-  if(state.gameState === "locked"){
+  if(stateData.gameState === "locked"){
     show("player");
     title.innerText = "Svar låst!";
     box.style.display = "none";
   }
-}
-
-/* ---------------- ADMIN UI ---------------- */
-
-function renderAdmin(state){
-  if(mode !== "admin") return;
-
-  document.getElementById("adminState").innerText =
-    `State: ${state.gameState} | Runde: ${state.currentRound}`;
 }
 
 /* ---------------- JOIN ---------------- */
@@ -152,8 +171,6 @@ window.join = async () => {
 
   const name = document.getElementById("name").value;
   const selectedRole = document.getElementById("role").value;
-
-  if(!name) return alert("Skriv navn");
 
   player = name;
   role = selectedRole;
@@ -171,50 +188,12 @@ window.join = async () => {
   show("player");
 };
 
-/* ---------------- ONLINE PRESENCE ---------------- */
-
-/* heartbeat */
-setInterval(async ()=>{
-  if(!player) return;
-
-  await updateDoc(doc(db,"players",player),{
-    online:true,
-    lastSeen:Date.now()
-  });
-
-},5000);
-
-/* disconnect */
-window.addEventListener("beforeunload", async ()=>{
-  if(!player) return;
-
-  await updateDoc(doc(db,"players",player),{
-    online:false
-  });
-});
-
-/* ---------------- ANSWER ---------------- */
-
-window.sendAnswer = async () => {
-
-  const val = Number(document.getElementById("slider").value);
-
-  await addDoc(collection(db,"answers"),{
-    name:player,
-    role,
-    value:val,
-    round:currentRound
-  });
-
-  alert("Sendt!");
-};
-
-/* ---------------- ADMIN CONTROL ---------------- */
+/* ---------------- ADMIN CONTROLS ---------------- */
 
 window.setQuestion = async () => {
   await setDoc(doc(db,"game","state"),{
     gameState:"question",
-    currentRound
+    currentRound:round
   });
 };
 
@@ -231,15 +210,15 @@ window.lockAnswers = async () => {
 };
 
 window.nextRound = async () => {
-  currentRound++;
+  round++;
 
   await updateDoc(doc(db,"game","state"),{
     gameState:"waiting",
-    currentRound
+    currentRound:round
   });
 };
 
-/* ---------------- PLAYER LIST ---------------- */
+/* ---------------- ONLINE LIST ---------------- */
 
 onSnapshot(collection(db,"players"), snap=>{
   const list = document.getElementById("players");
@@ -247,15 +226,8 @@ onSnapshot(collection(db,"players"), snap=>{
 
   list.innerHTML = "";
 
-  const now = Date.now();
-
   snap.forEach(d=>{
     const p = d.data();
-
-    const online = (now - p.lastSeen) < 10000;
-
-    if(!online) return;
-
     list.innerHTML += `<div>${p.name} (${p.role})</div>`;
   });
 });
@@ -272,8 +244,8 @@ onSnapshot(collection(db,"players"), snap=>{
 <input id="name" placeholder="Kallenavn"><br>
 
 <select id="role">
-  <option value="player">Deltaker</option>
-  <option value="daniel">Daniel</option>
+<option value="player">Deltaker</option>
+<option value="daniel">Daniel</option>
 </select><br>
 
 <button onclick="join()">Bli med</button>
@@ -281,22 +253,34 @@ onSnapshot(collection(db,"players"), snap=>{
 
 <!-- PLAYER -->
 <div id="player" class="view">
-<div class="card">
-
 <h2 id="title">Venter...</h2>
 
 <div id="answerBox" style="display:none;">
-  <input type="range" min="0" max="100" value="50" id="slider">
-  <div id="val">50</div>
-  <button onclick="sendAnswer()">Svar</button>
-</div>
-
+<input type="range" min="0" max="100" value="50" id="slider">
+<div id="val">50</div>
+<button onclick="sendAnswer()">Svar</button>
 </div>
 </div>
 
-<!-- ADMIN -->
-<div id="admin" class="view">
-<h1>ADMIN</h1>
+<!-- ADMIN LOBBY (QR + START) -->
+<div id="adminLobby" class="view">
+<h1>Admin Lobby</h1>
+
+<div class="qr">
+<img id="qr">
+</div>
+
+<h3 id="adminState"></h3>
+
+<button onclick="show('adminControl')">Start spill</button>
+
+<h3>Deltakere</h3>
+<div id="players"></div>
+</div>
+
+<!-- ADMIN CONTROL -->
+<div id="adminControl" class="view">
+<h1>Admin Control</h1>
 
 <h3 id="adminState"></h3>
 
@@ -304,9 +288,6 @@ onSnapshot(collection(db,"players"), snap=>{
 <button onclick="startAnswer()">Start svar</button>
 <button onclick="lockAnswers()">Lås</button>
 <button onclick="nextRound()">Neste</button>
-
-<h3>Deltakere (online)</h3>
-<div id="players"></div>
 </div>
 
 <script>
