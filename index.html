@@ -16,7 +16,7 @@ body{
 
 .view{display:none;padding:20px}
 
-button,input,select{
+button,input{
   padding:10px;
   margin:5px;
   font-size:16px;
@@ -32,7 +32,7 @@ button,input,select{
 }
 
 #playersList div{
-  padding:5px;
+  padding:4px;
 }
 </style>
 
@@ -63,8 +63,8 @@ const db = getFirestore(app);
 /* ---------------- MODE ---------------- */
 
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
-
 let player = localStorage.getItem("player") || "";
+let currentRound = 0;
 
 /* ---------------- QUESTIONS ---------------- */
 
@@ -111,16 +111,20 @@ function generateQR(){
     + encodeURIComponent(url);
 }
 
-/* ---------------- LISTEN GAME ---------------- */
+/* ---------------- GAME LISTENER ---------------- */
 
 function listenGame(){
   onSnapshot(doc(db,"game","state"), snap=>{
     if(!snap.exists()) return;
-    renderGame(snap.data());
+
+    const data = snap.data();
+    currentRound = data.currentRound;
+
+    render(data);
   });
 }
 
-/* ---------------- LISTEN PLAYERS ---------------- */
+/* ---------------- PLAYERS ---------------- */
 
 function listenPlayers(){
   onSnapshot(collection(db,"players"), snap => {
@@ -130,26 +134,19 @@ function listenPlayers(){
 
     list.innerHTML = "";
 
-    snap.forEach(d => {
-      const p = d.data();
-      list.innerHTML += `<div>👤 ${p.name}</div>`;
+    snap.forEach(d=>{
+      list.innerHTML += `<div>👤 ${d.data().name}</div>`;
     });
   });
 }
 
 /* ---------------- RENDER ---------------- */
 
-function renderGame(data){
+function render(data){
 
   const q = questions[data.currentRound] || "Ferdig!";
 
-  /* ---------------- ADMIN ---------------- */
   if(mode === "admin"){
-
-    document.getElementById("adminState").innerText =
-      `State: ${data.gameState} | Runde: ${data.currentRound}`;
-
-    document.getElementById("currentQuestion").innerText = q;
 
     if(data.gameState === "lobby"){
       show("adminLobby");
@@ -157,9 +154,11 @@ function renderGame(data){
     }
 
     show("adminControl");
+    document.getElementById("currentQuestion").innerText = q;
+    document.getElementById("adminState").innerText =
+      `Runde: ${data.currentRound} | State: ${data.gameState}`;
   }
 
-  /* ---------------- PLAYER ---------------- */
   if(mode !== "admin"){
 
     const title = document.getElementById("title");
@@ -182,12 +181,6 @@ function renderGame(data){
       title.innerText = q;
       box.style.display = "block";
     }
-
-    if(data.gameState === "locked"){
-      show("player");
-      title.innerText = "Svar låst";
-      box.style.display = "none";
-    }
   }
 }
 
@@ -196,7 +189,6 @@ function renderGame(data){
 window.join = async () => {
 
   const name = document.getElementById("name").value;
-
   player = name;
   localStorage.setItem("player", name);
 
@@ -207,7 +199,7 @@ window.join = async () => {
   show("player");
 };
 
-/* ---------------- ADMIN CONTROL ---------------- */
+/* ---------------- ADMIN ACTIONS ---------------- */
 
 window.resetGame = async () => {
   await setDoc(doc(db,"game","state"),{
@@ -217,7 +209,7 @@ window.resetGame = async () => {
 };
 
 window.startGame = async () => {
-  await setDoc(doc(db,"game","state"),{
+  await updateDoc(doc(db,"game","state"),{
     gameState:"question",
     currentRound:0
   });
@@ -226,12 +218,6 @@ window.startGame = async () => {
 window.startAnswer = async () => {
   await updateDoc(doc(db,"game","state"),{
     gameState:"answering"
-  });
-};
-
-window.lock = async () => {
-  await updateDoc(doc(db,"game","state"),{
-    gameState:"locked"
   });
 };
 
@@ -256,6 +242,22 @@ window.next = async () => {
   });
 };
 
+/* ---------------- ANSWER ---------------- */
+
+window.sendAnswer = async () => {
+
+  const val = document.getElementById("slider").value;
+
+  await addDoc(collection(db,"answers"),{
+    name: player,
+    value: Number(val),
+    round: currentRound,
+    time: Date.now()
+  });
+
+  alert("Svar sendt!");
+};
+
 </script>
 </head>
 
@@ -264,7 +266,6 @@ window.next = async () => {
 <!-- LOGIN -->
 <div id="login" class="view">
 <h1>Alle mot Daniel</h1>
-
 <input id="name" placeholder="Kallenavn"><br>
 <button onclick="join()">Bli med</button>
 </div>
@@ -274,7 +275,8 @@ window.next = async () => {
 <h2 id="title"></h2>
 
 <div id="answerBox" style="display:none;">
-<input type="range" min="0" max="100" value="50">
+<input type="range" min="0" max="100" value="50" id="slider">
+<div id="sliderValue">50</div>
 <button onclick="sendAnswer()">Svar</button>
 </div>
 </div>
@@ -299,13 +301,19 @@ window.next = async () => {
 <h1>ADMIN</h1>
 
 <h2 id="currentQuestion"></h2>
-
 <h3 id="adminState"></h3>
 
 <button onclick="startAnswer()">Start svar</button>
-<button onclick="lock()">Lås</button>
 <button onclick="next()">Neste</button>
 </div>
+
+<script>
+document.addEventListener("input", e=>{
+  if(e.target.id === "slider"){
+    document.getElementById("sliderValue").innerText = e.target.value;
+  }
+});
+</script>
 
 </body>
 </html>
