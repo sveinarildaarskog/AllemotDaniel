@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alle mot Daniel - FINAL FLOW</title>
+<title>Alle mot Daniel - FINAL FIX</title>
 
 <style>
 body{
@@ -66,6 +66,19 @@ const mode = new URLSearchParams(window.location.search).get("mode") || "player"
 let player = localStorage.getItem("player") || "";
 let role = localStorage.getItem("role") || "player";
 
+/* ---------------- QUESTIONS ---------------- */
+
+const questions = [
+  "Sengestrekk",
+  "Straffespark",
+  "Bottleflip",
+  "Vannpistol og telys",
+  "Biola bånnski",
+  "Vann på hodet",
+  "Triksekongen",
+  "Frisbeekast"
+];
+
 let state = "lobby";
 let round = 0;
 
@@ -79,7 +92,7 @@ function show(id){
 /* ---------------- INIT ---------------- */
 
 window.addEventListener("load", () => {
-  listenGame();
+  listen();
 
   if(mode === "admin"){
     show("adminLobby");
@@ -89,9 +102,19 @@ window.addEventListener("load", () => {
   }
 });
 
-/* ---------------- GAME STATE ---------------- */
+/* ---------------- QR ---------------- */
 
-function listenGame(){
+function generateQR(){
+  const url = window.location.origin + window.location.pathname + "?mode=join";
+
+  document.getElementById("qr").src =
+    "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
+    + encodeURIComponent(url);
+}
+
+/* ---------------- FIREBASE LISTEN ---------------- */
+
+function listen(){
   onSnapshot(doc(db,"game","state"), snap=>{
     if(!snap.exists()) return;
 
@@ -104,32 +127,28 @@ function listenGame(){
   });
 }
 
-/* ---------------- QR ---------------- */
-
-function generateQR(){
-  const url = window.location.origin + window.location.pathname + "?mode=join";
-
-  document.getElementById("qr").src =
-    "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
-    + encodeURIComponent(url);
-}
-
 /* ---------------- RENDER ---------------- */
 
 function render(data){
 
+  const q = questions[data.currentRound] || "Ingen oppgave";
+
+  // ADMIN
   if(mode === "admin"){
+
+    document.getElementById("adminState").innerText =
+      `State: ${data.gameState} | Runde: ${data.currentRound}`;
+
+    document.getElementById("currentQuestion").innerText = q;
 
     if(data.gameState === "lobby"){
       show("adminLobby");
     } else {
       show("adminControl");
     }
-
-    document.getElementById("adminState").innerText =
-      `State: ${data.gameState} | Runde: ${data.currentRound}`;
   }
 
+  // PLAYER
   if(mode !== "admin"){
 
     const title = document.getElementById("title");
@@ -143,13 +162,13 @@ function render(data){
 
     if(data.gameState === "question"){
       show("player");
-      title.innerText = "Oppgave vises...";
+      title.innerText = q;   // 🔥 OPPGAVEN VISES HER
       box.style.display = "none";
     }
 
     if(data.gameState === "answering"){
       show("player");
-      title.innerText = "SVAR NÅ!";
+      title.innerText = q;
       box.style.display = "block";
     }
 
@@ -191,7 +210,7 @@ window.startGame = async () => {
   });
 };
 
-window.setAnswer = async () => {
+window.startAnswer = async () => {
   await updateDoc(doc(db,"game","state"),{
     gameState:"answering"
   });
@@ -207,7 +226,7 @@ window.next = async () => {
   round++;
 
   await updateDoc(doc(db,"game","state"),{
-    gameState:"lobby",
+    gameState:"question",
     currentRound:round
   });
 };
@@ -223,7 +242,7 @@ window.next = async () => {
 
 <input id="name" placeholder="Kallenavn"><br>
 
-<select id="role">
+<select>
 <option value="player">Deltaker</option>
 <option value="daniel">Daniel</option>
 </select><br>
@@ -241,7 +260,7 @@ window.next = async () => {
 </div>
 </div>
 
-<!-- ADMIN LOBBY (STARTSIDE!) -->
+<!-- ADMIN LOBBY -->
 <div id="adminLobby" class="view">
 <h1>🔵 Bli med i spillet</h1>
 
@@ -252,18 +271,17 @@ window.next = async () => {
 <h3 id="adminState"></h3>
 
 <button onclick="startGame()">Start spillet</button>
-
-<h3>Deltakere</h3>
-<div id="players"></div>
 </div>
 
 <!-- ADMIN CONTROL -->
 <div id="adminControl" class="view">
 <h1>ADMIN</h1>
 
+<h2 id="currentQuestion"></h2>
+
 <h3 id="adminState"></h3>
 
-<button onclick="setAnswer()">Start svar</button>
+<button onclick="startAnswer()">Start svar</button>
 <button onclick="lock()">Lås</button>
 <button onclick="next()">Neste</button>
 </div>
