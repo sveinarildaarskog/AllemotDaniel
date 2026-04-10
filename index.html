@@ -63,8 +63,12 @@ const db = getFirestore(app);
 /* ---------------- MODE ---------------- */
 
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
+
 let player = localStorage.getItem("player") || "";
 let currentRound = 0;
+
+/* 🔥 VIKTIG: hindrer auto-start */
+let adminReady = false;
 
 /* ---------------- QUESTIONS ---------------- */
 
@@ -94,6 +98,7 @@ window.addEventListener("load", () => {
   listenPlayers();
 
   if(mode === "admin"){
+    adminReady = false;   // 🔥 viktig reset
     show("adminLobby");
     generateQR();
   } else {
@@ -114,11 +119,12 @@ function generateQR(){
 /* ---------------- GAME LISTENER ---------------- */
 
 function listenGame(){
-  onSnapshot(doc(db,"game","state"), snap=>{
+  onSnapshot(doc(db,"game","state"), snap => {
+
     if(!snap.exists()) return;
 
     const data = snap.data();
-    currentRound = data.currentRound;
+    currentRound = data.currentRound || 0;
 
     render(data);
   });
@@ -146,19 +152,23 @@ function render(data){
 
   const q = questions[data.currentRound] || "Ferdig!";
 
+  /* ---------------- ADMIN ---------------- */
   if(mode === "admin"){
 
-    if(data.gameState === "lobby"){
+    // 🔥 VIKTIG: alltid vis lobby hvis ikke startet
+    if(!adminReady){
       show("adminLobby");
       return;
     }
 
     show("adminControl");
+
     document.getElementById("currentQuestion").innerText = q;
     document.getElementById("adminState").innerText =
       `Runde: ${data.currentRound} | State: ${data.gameState}`;
   }
 
+  /* ---------------- PLAYER ---------------- */
   if(mode !== "admin"){
 
     const title = document.getElementById("title");
@@ -189,6 +199,7 @@ function render(data){
 window.join = async () => {
 
   const name = document.getElementById("name").value;
+
   player = name;
   localStorage.setItem("player", name);
 
@@ -202,6 +213,9 @@ window.join = async () => {
 /* ---------------- ADMIN ACTIONS ---------------- */
 
 window.resetGame = async () => {
+
+  adminReady = false;
+
   await setDoc(doc(db,"game","state"),{
     gameState:"lobby",
     currentRound:0
@@ -209,7 +223,10 @@ window.resetGame = async () => {
 };
 
 window.startGame = async () => {
-  await updateDoc(doc(db,"game","state"),{
+
+  adminReady = true;
+
+  await setDoc(doc(db,"game","state"),{
     gameState:"question",
     currentRound:0
   });
@@ -226,7 +243,7 @@ window.next = async () => {
   const snap = await getDoc(doc(db,"game","state"));
   const data = snap.data();
 
-  let next = data.currentRound + 1;
+  let next = (data.currentRound || 0) + 1;
 
   if(next >= 8){
     await updateDoc(doc(db,"game","state"),{
@@ -289,8 +306,8 @@ window.sendAnswer = async () => {
 <img id="qr">
 </div>
 
-<button onclick="resetGame()">🔄 Nytt spill</button>
-<button onclick="startGame()">Start spill</button>
+<button onclick="startGame()">▶ Start spill</button>
+<button onclick="resetGame()">🔄 Reset</button>
 
 <h3>Deltakere</h3>
 <div id="playersList"></div>
