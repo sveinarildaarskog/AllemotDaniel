@@ -204,7 +204,13 @@ input,button{padding:10px;margin:5px}
 
 <div id="adminLobby" class="view">
 <h1>Scan QR og bli med</h1>
+
+<canvas id="qr"></canvas>
+
+<p id="joinLink"></p>
+
 <div id="players"></div>
+
 <button onclick="startGame()">Start spillet</button>
 </div>
 
@@ -229,6 +235,15 @@ input,button{padding:10px;margin:5px}
 const slider = document.getElementById("slider");
 if(slider){
   slider.oninput = () => document.getElementById("val").innerText = slider.value;
+}
+  if(mode === "admin"){
+  const url = window.location.origin + window.location.pathname;
+  
+  document.getElementById("joinLink").innerText = url;
+
+  QRCode.toCanvas(document.getElementById("qr"), url, function (error) {
+    if (error) console.error(error);
+  });
 }
 </script>
 
