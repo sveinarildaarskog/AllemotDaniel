@@ -26,7 +26,7 @@ button,input{
   background:white;
   padding:20px;
   border-radius:20px;
-  width:300px;
+  width:280px;
   margin:20px auto;
   color:black;
 }
@@ -60,15 +60,15 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* ---------------- STATE CONTROL ---------------- */
+/* ---------------- STATE ---------------- */
 
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
 
 let player = localStorage.getItem("player") || "";
 let currentRound = 0;
 
-/* 🔥 HARD CONTROL (STOPP AUTO-HOP) */
-window.started = false;
+/* 🔥 HARD LOCK */
+let started = false;
 
 /* ---------------- QUESTIONS ---------------- */
 
@@ -83,7 +83,7 @@ const questions = [
   "Frisbeekast"
 ];
 
-/* ---------------- VIEW ---------------- */
+/* ---------------- UI ---------------- */
 
 function show(id){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
@@ -98,7 +98,7 @@ window.addEventListener("load", () => {
   listenPlayers();
 
   if(mode === "admin"){
-    window.started = false;
+    started = false;
     show("adminLobby");
     generateQR();
   } else {
@@ -116,7 +116,7 @@ function generateQR(){
     + encodeURIComponent(url);
 }
 
-/* ---------------- FIREBASE LISTEN ---------------- */
+/* ---------------- FIREBASE ---------------- */
 
 function listenGame(){
   onSnapshot(doc(db,"game","state"), snap => {
@@ -124,17 +124,58 @@ function listenGame(){
     if(!snap.exists()) return;
 
     const data = snap.data();
-
     currentRound = data.currentRound || 0;
 
-    /* 🔥 BLOCK AUTO HOP */
-    if(mode === "admin" && !window.started){
-      show("adminLobby");
+    /* 🔥 ADMIN CONTROL (INGEN AUTO HOP) */
+    if(mode === "admin"){
+
+      if(!started){
+        show("adminLobby");
+        return;
+      }
+
+      show("adminControl");
+
+      document.getElementById("currentQuestion").innerText =
+        questions[currentRound] || "Ferdig!";
+
+      document.getElementById("adminState").innerText =
+        `Runde ${currentRound} | ${data.gameState}`;
+
       return;
     }
 
-    render(data);
+    /* PLAYER */
+    renderPlayer(data);
   });
+}
+
+/* ---------------- PLAYER ---------------- */
+
+function renderPlayer(data){
+
+  const q = questions[data.currentRound] || "Ferdig!";
+
+  const title = document.getElementById("title");
+  const box = document.getElementById("answerBox");
+
+  if(data.gameState === "lobby"){
+    show("player");
+    title.innerText = "Venter på start...";
+    box.style.display = "none";
+  }
+
+  if(data.gameState === "question"){
+    show("player");
+    title.innerText = q;
+    box.style.display = "none";
+  }
+
+  if(data.gameState === "answering"){
+    show("player");
+    title.innerText = q;
+    box.style.display = "block";
+  }
 }
 
 /* ---------------- PLAYERS ---------------- */
@@ -153,46 +194,6 @@ function listenPlayers(){
   });
 }
 
-/* ---------------- RENDER ---------------- */
-
-function render(data){
-
-  const q = questions[data.currentRound] || "Ferdig!";
-
-  if(mode === "admin"){
-
-    show("adminControl");
-
-    document.getElementById("currentQuestion").innerText = q;
-    document.getElementById("adminState").innerText =
-      `State: ${data.gameState} | Runde: ${data.currentRound}`;
-  }
-
-  if(mode !== "admin"){
-
-    const title = document.getElementById("title");
-    const box = document.getElementById("answerBox");
-
-    if(data.gameState === "lobby"){
-      show("player");
-      title.innerText = "Venter på start...";
-      box.style.display = "none";
-    }
-
-    if(data.gameState === "question"){
-      show("player");
-      title.innerText = q;
-      box.style.display = "none";
-    }
-
-    if(data.gameState === "answering"){
-      show("player");
-      title.innerText = q;
-      box.style.display = "block";
-    }
-  }
-}
-
 /* ---------------- JOIN ---------------- */
 
 window.join = async () => {
@@ -209,11 +210,21 @@ window.join = async () => {
   show("player");
 };
 
-/* ---------------- ADMIN ---------------- */
+/* ---------------- ADMIN ACTIONS ---------------- */
+
+window.startGame = async () => {
+
+  started = true;
+
+  await setDoc(doc(db,"game","state"),{
+    gameState:"question",
+    currentRound:0
+  });
+};
 
 window.resetGame = async () => {
 
-  window.started = false;
+  started = false;
 
   await setDoc(doc(db,"game","state"),{
     gameState:"lobby",
@@ -221,16 +232,6 @@ window.resetGame = async () => {
   });
 
   show("adminLobby");
-};
-
-window.startGame = async () => {
-
-  window.started = true;
-
-  await setDoc(doc(db,"game","state"),{
-    gameState:"question",
-    currentRound:0
-  });
 };
 
 window.startAnswer = async () => {
