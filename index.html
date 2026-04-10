@@ -3,11 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alle mot Daniel - LIVE</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<title>Alle mot Daniel - FULL PRO</title>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDE7WQY2NZ8ZgAvD8Rm1Mq_owxddA8LHQM",
@@ -19,11 +18,12 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
-
 let player = localStorage.getItem("player") || "";
 let role = localStorage.getItem("role") || "player";
-let currentRound = 0;
-let timerRunning = false;
+let round = 0;
+let locked = false;
+
+let scores = { daniel: 0, crowd: 0 };
 
 const questions = [
   "Sengestrekk",
@@ -41,11 +41,9 @@ function show(id){
   document.getElementById(id).style.display="block";
 }
 
-// MODE routing
 if(mode === "admin") show("adminLobby");
 else show(player ? "game" : "login");
 
-// JOIN
 window.join = async () => {
   const name = document.getElementById("name").value;
   const selectedRole = document.getElementById("role").value;
@@ -53,28 +51,26 @@ window.join = async () => {
 
   player = name;
   role = selectedRole;
-
   localStorage.setItem("player", name);
   localStorage.setItem("role", selectedRole);
 
   await setDoc(doc(db, "players", name), {
     name,
     role,
-    score: 0
+    score: 0,
+    totalDiff: 0
   });
 
   show("game");
 };
 
-// ADMIN START GAME
 window.startGame = () => {
   show("adminGame");
-  document.getElementById("questionTitle").innerText = questions[currentRound];
+  document.getElementById("questionTitle").innerText = questions[round];
 };
 
-// TIMER
 window.startTimer = () => {
-  timerRunning = true;
+  locked = false;
   let time = 30;
   const el = document.getElementById("timer");
 
@@ -83,38 +79,106 @@ window.startTimer = () => {
     time--;
     if(time < 0){
       clearInterval(interval);
-      timerRunning = false;
+      locked = true;
+      calculateRound();
     }
   }, 1000);
 };
 
-// ANSWER
 window.sendAnswer = async () => {
+  if(locked) return;
   const val = Number(document.getElementById("slider").value);
   await addDoc(collection(db, "answers"), {
     name: player,
     role,
     value: val,
-    round: currentRound
+    round
   });
 };
 
-// LISTEN PLAYERS
+async function calculateRound(){
+  const snap = await getDocs(collection(db, "answers"));
+
+  let crowd = [];
+  let daniel = null;
+
+  snap.forEach(d=>{
+    const a = d.data();
+    if(a.round===round){
+      if(a.role === "daniel") daniel = a.value;
+      else crowd.push(a.value);
+    }
+  });
+
+  if(!crowd.length || daniel === null) return;
+
+  const avg = crowd.reduce((a,b)=>a+b,0)/crowd.length;
+  const correct = 50; // midlertidig
+
+  const crowdDiff = Math.abs(avg - correct);
+  const danielDiff = Math.abs(daniel - correct);
+
+  if(danielDiff <= crowdDiff) scores.daniel++;
+  else scores.crowd++;
+
+  document.getElementById("result").innerText = `Daniel: ${scores.daniel} | Publikum: ${scores.crowd}`;
+
+  // Oppdater individuelle stats
+  const playersSnap = await getDocs(collection(db, "players"));
+
+  playersSnap.forEach(async p=>{
+    const data = p.data();
+    const ans = snap.docs.find(a=>a.data().name===data.name && a.data().round===round);
+    if(ans){
+      const diff = Math.abs(ans.data().value - correct);
+      await updateDoc(doc(db,"players",data.name),{
+        totalDiff: (data.totalDiff||0) + diff
+      });
+    }
+  });
+}
+
+window.next = ()=>{
+  round++;
+  if(round >= questions.length){
+    endGame();
+    return;
+  }
+  document.getElementById("questionTitle").innerText = questions[round];
+};
+
+async function endGame(){
+  const snap = await getDocs(collection(db, "players"));
+  let arr = [];
+
+  snap.forEach(d=>{
+    const p = d.data();
+    if(p.role !== "daniel") arr.push(p);
+  });
+
+  arr.sort((a,b)=>a.totalDiff-b.totalDiff);
+
+  let top5 = arr.slice(0,5).map((p,i)=>`${i+1}. ${p.name}`).join("<br>");
+
+  document.getElementById("final").innerHTML = `
+    <h1>Sluttresultat</h1>
+    <h2>Daniel: ${scores.daniel} | Publikum: ${scores.crowd}</h2>
+    <h2>Topp 5:</h2>
+    ${top5}
+  `;
+
+  show("final");
+}
+
 onSnapshot(collection(db, "players"), snap => {
   const list = document.getElementById("players");
   if(!list) return;
-  list.innerHTML = "";
-  snap.forEach(d => {
-    const p = d.data();
+  list.innerHTML="";
+  snap.forEach(d=>{
+    const p=d.data();
     list.innerHTML += `<div>${p.name} (${p.role})</div>`;
   });
 });
-
-// NEXT ROUND
-window.next = () => {
-  currentRound++;
-  document.getElementById("questionTitle").innerText = questions[currentRound] || "Ferdig";
-};
 
 </script>
 
@@ -127,7 +191,6 @@ input,button{padding:10px;margin:5px}
 </head>
 <body>
 
-<!-- LOGIN -->
 <div id="login" class="view">
 <h1>Alle mot Daniel</h1>
 <input id="name" placeholder="Kallenavn"><br>
@@ -138,23 +201,20 @@ input,button{padding:10px;margin:5px}
 <button onclick="join()">Bli med</button>
 </div>
 
-<!-- ADMIN LOBBY -->
 <div id="adminLobby" class="view">
 <h1>Scan QR og bli med</h1>
-<p>(QR kan legges til senere)</p>
 <div id="players"></div>
 <button onclick="startGame()">Start spillet</button>
 </div>
 
-<!-- ADMIN GAME / SCREEN -->
 <div id="adminGame" class="view">
 <h1 id="questionTitle"></h1>
 <h2 id="timer">Tid: 30</h2>
-<button onclick="startTimer()">Start nedtelling</button>
-<button onclick="next()">Neste oppgave</button>
+<button onclick="startTimer()">Nedtelling</button>
+<button onclick="next()">Neste</button>
+<h2 id="result"></h2>
 </div>
 
-<!-- PLAYER / DANIEL -->
 <div id="game" class="view">
 <h2 id="q"></h2>
 <input type="range" min="0" max="100" value="50" id="slider" class="slider">
@@ -162,12 +222,12 @@ input,button{padding:10px;margin:5px}
 <button onclick="sendAnswer()">Svar</button>
 </div>
 
+<div id="final" class="view"></div>
+
 <script>
 const slider = document.getElementById("slider");
 if(slider){
-  slider.oninput = () => {
-    document.getElementById("val").innerText = slider.value;
-  }
+  slider.oninput = () => document.getElementById("val").innerText = slider.value;
 }
 </script>
 
