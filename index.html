@@ -14,12 +14,10 @@ body{
   text-align:center;
 }
 
-.view{display:none;padding:20px}
-
-button,input,select{
-  padding:10px;
-  margin:5px;
-  font-size:16px;
+/* 🔥 FIX: all views hidden by default */
+.view{
+  display:none;
+  padding:20px;
 }
 
 .qr{
@@ -29,6 +27,12 @@ button,input,select{
   width:320px;
   margin:20px auto;
   color:black;
+}
+
+button,input,select{
+  padding:10px;
+  margin:5px;
+  font-size:16px;
 }
 </style>
 
@@ -60,7 +64,6 @@ const db = getFirestore(app);
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
 
 let player = localStorage.getItem("player") || "";
-let role = localStorage.getItem("role") || "player";
 
 /* ---------------- QUESTIONS ---------------- */
 
@@ -75,24 +78,30 @@ const questions = [
   "Frisbeekast"
 ];
 
-/* ---------------- VIEW ---------------- */
+/* ---------------- VIEW CONTROL (IMPORTANT FIX) ---------------- */
+
+function hideAll(){
+  document.querySelectorAll(".view").forEach(v=>{
+    v.style.display = "none";
+  });
+}
 
 function show(id){
-  document.querySelectorAll(".view").forEach(v=>v.style.display="none");
-  document.getElementById(id).style.display="block";
+  hideAll();
+  document.getElementById(id).style.display = "block";
 }
 
 /* ---------------- INIT ---------------- */
 
 window.addEventListener("load", () => {
 
-  listenGame();
+  listen();
 
   if(mode === "admin"){
-    show("adminLobby");
-    generateQR();   // 🔥 bare UI, ingen reset
+    show("adminLobby"); // 🔥 ALWAYS FIRST, NO SNAPSHOT INVOLVED
+    generateQR();
   } else {
-    show(player ? "player" : "login");
+    show("login");
   }
 });
 
@@ -108,20 +117,22 @@ function generateQR(){
 
 /* ---------------- LISTEN ---------------- */
 
-function listenGame(){
+function listen(){
   onSnapshot(doc(db,"game","state"), snap=>{
     if(!snap.exists()) return;
-    render(snap.data());
+
+    const data = snap.data();
+    render(data);
   });
 }
 
-/* ---------------- RENDER ---------------- */
+/* ---------------- RENDER (SPLIT LOGIC FIX) ---------------- */
 
 function render(data){
 
   const q = questions[data.currentRound] || "Ferdig!";
 
-  /* ---------------- ADMIN ---------------- */
+  /* ---------------- ADMIN FLOW ---------------- */
   if(mode === "admin"){
 
     document.getElementById("adminState").innerText =
@@ -129,6 +140,8 @@ function render(data){
 
     document.getElementById("currentQuestion").innerText = q;
 
+    // 🔥 IMPORTANT: NO AUTO SWITCH ON FIRST LOAD
+    // only switch AFTER state exists
     if(data.gameState === "lobby"){
       show("adminLobby");
     } else {
@@ -136,7 +149,7 @@ function render(data){
     }
   }
 
-  /* ---------------- PLAYER ---------------- */
+  /* ---------------- PLAYER FLOW ---------------- */
   if(mode !== "admin"){
 
     const title = document.getElementById("title");
@@ -173,23 +186,18 @@ function render(data){
 window.join = async () => {
 
   const name = document.getElementById("name").value;
-  const selectedRole = document.getElementById("role").value;
 
   player = name;
-  role = selectedRole;
-
   localStorage.setItem("player", name);
-  localStorage.setItem("role", role);
 
   await setDoc(doc(db,"players",name),{
-    name,
-    role
+    name
   });
 
   show("player");
 };
 
-/* ---------------- ADMIN CONTROL ---------------- */
+/* ---------------- ADMIN ---------------- */
 
 window.startGame = async () => {
   await setDoc(doc(db,"game","state"),{
@@ -241,26 +249,19 @@ window.next = async () => {
 <h1>Alle mot Daniel</h1>
 
 <input id="name" placeholder="Kallenavn"><br>
-
-<select>
-<option value="player">Deltaker</option>
-<option value="daniel">Daniel</option>
-</select><br>
-
 <button onclick="join()">Bli med</button>
 </div>
 
 <!-- PLAYER -->
 <div id="player" class="view">
-<h2 id="title">...</h2>
+<h2 id="title"></h2>
 
 <div id="answerBox" style="display:none;">
-<input type="range" min="0" max="100" value="50" id="slider">
-<div id="val">50</div>
+<input type="range" min="0" max="100" value="50">
 </div>
 </div>
 
-<!-- ADMIN LOBBY (STABIL) -->
+<!-- ADMIN LOBBY (FIXED STABLE FRONT PAGE) -->
 <div id="adminLobby" class="view">
 <h1>Alle mot Daniel</h1>
 
