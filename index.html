@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alle mot Daniel - FINAL STABLE</title>
+<title>Alle mot Daniel - STATE VERSION</title>
 
 <style>
 body{
@@ -16,30 +16,39 @@ body{
 
 .view{display:none;padding:20px}
 
-input,select,button{
+button,input,select{
   padding:10px;
   margin:5px;
   font-size:16px;
 }
 
-.qr-box{
-  background:white;
-  padding:20px;
-  border-radius:20px;
-  width:320px;
-  margin:20px auto;
-}
+.slider{width:80%}
 
-.qr-box img{
-  width:280px;
-  height:280px;
+.card{
+  background:#222;
+  padding:20px;
+  margin:20px auto;
+  width:90%;
+  max-width:500px;
+  border-radius:15px;
 }
 </style>
 
 <script type="module">
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot }
-from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  onSnapshot,
+  collection,
+  addDoc,
+  updateDoc
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+/* ---------------- FIREBASE ---------------- */
 
 const firebaseConfig = {
   apiKey: "AIzaSyDE7WQY2NZ8ZgAvD8Rm1Mq_owxddA8LHQM",
@@ -50,45 +59,101 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+/* ---------------- STATE ---------------- */
+
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
 
 let player = localStorage.getItem("player") || "";
 let role = localStorage.getItem("role") || "player";
 
-let round = 0;
-let locked = false;
+let gameState = "waiting";
+let currentRound = 0;
 
-/* ---------------- NAVIGASJON ---------------- */
+/* ---------------- VIEW ---------------- */
+
 function show(id){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   document.getElementById(id).style.display="block";
 }
 
-window.addEventListener("load", () => {
+/* ---------------- INIT ---------------- */
+
+window.addEventListener("load", async () => {
+
+  listenGameState();
+
   if(mode === "admin"){
-    show("adminLobby");
-    generateQR();
+    show("admin");
   } else {
-    show("login");
+    show(player ? "player" : "login");
   }
 });
 
-/* ---------------- QR (100% STABIL) ---------------- */
-function generateQR(){
-  const url = window.location.origin + window.location.pathname + "?mode=join";
+/* ---------------- GAME STATE LISTENER ---------------- */
 
-  const img = document.getElementById("qr");
-  const link = document.getElementById("joinLink");
+function listenGameState(){
+  onSnapshot(doc(db,"game","state"), (snap) => {
 
-  link.innerText = url;
+    if(!snap.exists()) return;
 
-  img.src =
-    "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
-    + encodeURIComponent(url);
+    const data = snap.data();
+
+    gameState = data.gameState;
+    currentRound = data.currentRound;
+
+    renderPlayerUI(data);
+    renderAdminUI(data);
+  });
+}
+
+/* ---------------- PLAYER UI ---------------- */
+
+function renderPlayerUI(state){
+
+  if(mode === "admin") return;
+
+  const title = document.getElementById("title");
+  const sliderBox = document.getElementById("sliderBox");
+
+  if(state.gameState === "waiting"){
+    show("player");
+    title.innerText = "Venter på neste oppgave...";
+    sliderBox.style.display = "none";
+  }
+
+  if(state.gameState === "question"){
+    show("player");
+    title.innerText = "Oppgave kommer...";
+    sliderBox.style.display = "none";
+  }
+
+  if(state.gameState === "answering"){
+    show("player");
+    title.innerText = "Gi svar nå!";
+    sliderBox.style.display = "block";
+  }
+
+  if(state.gameState === "locked"){
+    show("player");
+    title.innerText = "Svar låst!";
+    sliderBox.style.display = "none";
+  }
+}
+
+/* ---------------- ADMIN UI ---------------- */
+
+function renderAdminUI(state){
+
+  if(mode !== "admin") return;
+
+  document.getElementById("adminState").innerText =
+    "State: " + state.gameState + " | Runde: " + state.currentRound;
 }
 
 /* ---------------- JOIN ---------------- */
+
 window.join = async () => {
+
   const name = document.getElementById("name").value;
   const selectedRole = document.getElementById("role").value;
 
@@ -105,12 +170,12 @@ window.join = async () => {
     role
   });
 
-  show("game");
+  show("player");
 };
 
-/* ---------------- SEND SVAR ---------------- */
+/* ---------------- SEND ANSWER ---------------- */
+
 window.sendAnswer = async () => {
-  if(locked) return alert("Svar låst");
 
   const val = Number(document.getElementById("slider").value);
 
@@ -118,47 +183,45 @@ window.sendAnswer = async () => {
     name:player,
     role,
     value:val,
-    round
+    round:currentRound
+  });
+
+  alert("Sendt!");
+};
+
+/* ---------------- ADMIN CONTROL ---------------- */
+
+window.setQuestion = async () => {
+
+  await setDoc(doc(db,"game","state"),{
+    gameState:"question",
+    currentRound
   });
 };
 
-/* ---------------- TIMER ---------------- */
-window.startTimer = () => {
-  locked = false;
+window.startAnswer = async () => {
 
-  let t = 30;
-  const el = document.getElementById("timer");
-
-  const i = setInterval(()=>{
-    el.innerText = "Tid: " + t;
-    t--;
-
-    if(t < 0){
-      clearInterval(i);
-      locked = true;
-    }
-  },1000);
-};
-
-/* ---------------- NEXT ROUND ---------------- */
-window.next = () => {
-  round++;
-  document.getElementById("questionTitle").innerText =
-    "Runde " + (round+1);
-};
-
-/* ---------------- LIVE PLAYERS ---------------- */
-onSnapshot(collection(db,"players"),snap=>{
-  const list = document.getElementById("players");
-  if(!list) return;
-
-  list.innerHTML = "";
-
-  snap.forEach(d=>{
-    const p = d.data();
-    list.innerHTML += `<div>${p.name} (${p.role})</div>`;
+  await updateDoc(doc(db,"game","state"),{
+    gameState:"answering"
   });
-});
+};
+
+window.lockAnswers = async () => {
+
+  await updateDoc(doc(db,"game","state"),{
+    gameState:"locked"
+  });
+};
+
+window.nextRound = async () => {
+
+  currentRound++;
+
+  await updateDoc(doc(db,"game","state"),{
+    gameState:"waiting",
+    currentRound
+  });
+};
 
 </script>
 </head>
@@ -167,57 +230,48 @@ onSnapshot(collection(db,"players"),snap=>{
 
 <!-- LOGIN -->
 <div id="login" class="view">
-<h1>Alle mot Daniel</h1>
+  <h1>Alle mot Daniel</h1>
 
-<input id="name" placeholder="Kallenavn"><br>
+  <input id="name" placeholder="Kallenavn"><br>
 
-<select id="role">
-  <option value="player">Deltaker</option>
-  <option value="daniel">Daniel</option>
-</select><br>
+  <select id="role">
+    <option value="player">Deltaker</option>
+    <option value="daniel">Daniel</option>
+  </select><br>
 
-<button onclick="join()">Bli med</button>
+  <button onclick="join()">Bli med</button>
 </div>
 
-<!-- ADMIN LOBBY -->
-<div id="adminLobby" class="view">
-<h1>Scan QR og bli med</h1>
+<!-- PLAYER -->
+<div id="player" class="view">
+  <div class="card">
 
-<div class="qr-box">
-  <img id="qr">
+    <h2 id="title">Venter...</h2>
+
+    <div id="sliderBox" style="display:none;">
+      <input type="range" min="0" max="100" value="50" id="slider">
+      <div id="val">50</div>
+      <button onclick="sendAnswer()">Svar</button>
+    </div>
+
+  </div>
 </div>
 
-<p id="joinLink"></p>
+<!-- ADMIN -->
+<div id="admin" class="view">
+  <h1>ADMIN PANEL</h1>
 
-<h3>Deltakere</h3>
-<div id="players"></div>
+  <h3 id="adminState">Loading...</h3>
 
-<button onclick="show('adminGame')">Start spillet</button>
-</div>
-
-<!-- ADMIN GAME -->
-<div id="adminGame" class="view">
-<h1 id="questionTitle">Spill starter</h1>
-
-<h2 id="timer">Tid: 30</h2>
-
-<button onclick="startTimer()">Start nedtelling</button>
-<button onclick="next()">Neste</button>
-</div>
-
-<!-- SPILLER -->
-<div id="game" class="view">
-<h2>Gi svar</h2>
-
-<input type="range" min="0" max="100" value="50" id="slider">
-<div id="val">50</div>
-
-<button onclick="sendAnswer()">Svar</button>
+  <button onclick="setQuestion()">Vis oppgave</button>
+  <button onclick="startAnswer()">Start svar</button>
+  <button onclick="lockAnswers()">Lås svar</button>
+  <button onclick="nextRound()">Neste runde</button>
 </div>
 
 <script>
 document.addEventListener("input", e=>{
-  if(e.target.id === "slider"){
+  if(e.target.id==="slider"){
     document.getElementById("val").innerText = e.target.value;
   }
 });
