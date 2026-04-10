@@ -6,12 +6,39 @@
 <title>Alle mot Daniel</title>
 
 <style>
-body{margin:0;font-family:Arial;background:#111;color:white;text-align:center;}
+body{
+  margin:0;
+  font-family:Arial;
+  background:#111;
+  color:white;
+  text-align:center;
+}
+
 .view{display:none;padding:20px}
-button,input{padding:10px;margin:5px;font-size:16px;}
-.qr{background:white;padding:20px;border-radius:20px;width:280px;margin:20px auto;color:black;}
-#playersList div{padding:4px;}
-.bigTimer{font-size:50px;margin:20px;}
+
+button,input{
+  padding:10px;
+  margin:5px;
+  font-size:16px;
+}
+
+.qr{
+  background:white;
+  padding:20px;
+  border-radius:20px;
+  width:280px;
+  margin:20px auto;
+  color:black;
+}
+
+.bigTimer{
+  font-size:50px;
+  margin:20px;
+}
+
+#playersList div{
+  padding:4px;
+}
 </style>
 
 <script type="module">
@@ -28,6 +55,7 @@ import {
   addDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+/* FIREBASE */
 const firebaseConfig = {
   apiKey: "AIzaSyDE7W...",
   authDomain: "alle-mot-konfirmanten.firebaseapp.com",
@@ -37,11 +65,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+/* STATE */
 const mode = (new URLSearchParams(window.location.search).get("mode") || "player").toLowerCase();
 
 let player = "";
 let hasAnswered = false;
-let timerInterval;
 
 /* QUESTIONS */
 const questions = [
@@ -55,11 +83,13 @@ const questions = [
   "Frisbeekast"
 ];
 
+/* UI */
 function show(id){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   document.getElementById(id).style.display="block";
 }
 
+/* INIT */
 window.addEventListener("load", () => {
 
   listenGame();
@@ -81,11 +111,12 @@ function generateQR(){
     + encodeURIComponent(url);
 }
 
-/* GAME */
+/* GAME LISTENER */
 function listenGame(){
   onSnapshot(doc(db,"game","state"), snap => {
 
     if(!snap.exists()) return;
+
     const data = snap.data();
 
     if(mode === "admin"){
@@ -102,7 +133,7 @@ function listenGame(){
   });
 }
 
-/* PLAYER */
+/* PLAYER FLOW */
 function renderPlayer(data){
 
   show("player");
@@ -110,34 +141,39 @@ function renderPlayer(data){
   const title = document.getElementById("title");
   const box = document.getElementById("answerBox");
 
+  const state = data.gameState;
+
   title.innerText = questions[data.currentRound] || "";
 
-  if(data.gameState === "answering"){
-    if(!hasAnswered){
-      box.style.display = "block";
-    }
-  } else {
+  if(state === "lobby"){
+    title.innerText = "Venter på start...";
     box.style.display = "none";
   }
-}
 
-/* ADMIN */
-function renderAdmin(data){
-
-  if(data.gameState === "lobby"){
-    show("adminLobby");
-    return;
+  if(state === "question"){
+    hasAnswered = false;
+    document.getElementById("slider").disabled = false;
+    document.getElementById("answerBtn").style.display = "block";
+    box.style.display = "none";
   }
 
-  show("adminControl");
+  if(state === "answering"){
 
-  document.getElementById("currentQuestion").innerText =
-    questions[data.currentRound] || "";
+    if(!hasAnswered){
+      box.style.display = "block";
+    } else {
+      box.style.display = "none";
+      title.innerText = "Vent på svar ⏳";
+    }
+  }
 
-  document.getElementById("timer").innerText = data.timer || "";
+  if(state === "locked"){
+    box.style.display = "none";
+    title.innerText = "Tiden er ute ✔";
+  }
 }
 
-/* PLAYERS */
+/* PLAYERS LIST */
 function listenPlayers(){
   onSnapshot(collection(db,"players"), snap => {
 
@@ -196,13 +232,17 @@ window.sendAnswer = async () => {
 
   document.getElementById("slider").disabled = true;
   document.getElementById("answerBtn").style.display = "none";
+
+  document.getElementById("title").innerText = "Vent på svar ⏳";
+  document.getElementById("answerBox").style.display = "none";
 };
 
-/* ADMIN ACTIONS */
+/* ADMIN */
 window.startGame = async () => {
   await setDoc(doc(db,"game","state"),{
     gameState:"question",
-    currentRound:0
+    currentRound:0,
+    timer:0
   });
 };
 
@@ -215,7 +255,7 @@ window.startCountdown = async () => {
     timer: time
   });
 
-  timerInterval = setInterval(async () => {
+  const interval = setInterval(async () => {
 
     time--;
 
@@ -224,10 +264,10 @@ window.startCountdown = async () => {
     });
 
     if(time <= 0){
-      clearInterval(timerInterval);
+      clearInterval(interval);
 
       await updateDoc(doc(db,"game","state"),{
-        gameState:"finished",
+        gameState:"locked",
         timer: 0
       });
     }
@@ -251,12 +291,14 @@ window.next = async () => {
 
 <body>
 
+<!-- LOGIN -->
 <div id="login" class="view">
 <h1>Alle mot Daniel</h1>
 <input id="name" placeholder="Kallenavn"><br>
 <button onclick="join()">Bli med</button>
 </div>
 
+<!-- PLAYER -->
 <div id="player" class="view">
 <h2 id="title"></h2>
 
@@ -267,6 +309,7 @@ window.next = async () => {
 </div>
 </div>
 
+<!-- ADMIN -->
 <div id="adminLobby" class="view">
 <h1>Alle mot Daniel</h1>
 
@@ -275,17 +318,17 @@ window.next = async () => {
 </div>
 
 <button onclick="startGame()">Start spill</button>
+<button onclick="startCountdown()">Start 30 sek</button>
 
 <h3>Deltakere</h3>
 <div id="playersList"></div>
 </div>
 
 <div id="adminControl" class="view">
-<h2 id="currentQuestion"></h2>
+<h2>ADMIN</h2>
 
 <div class="bigTimer" id="timer"></div>
 
-<button onclick="startCountdown()">Start nedtelling</button>
 <button onclick="next()">Neste oppgave</button>
 </div>
 
