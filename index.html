@@ -14,25 +14,21 @@ body{
   text-align:center;
 }
 
-/* 🔥 FIX: all views hidden by default */
-.view{
-  display:none;
-  padding:20px;
+.view{display:none;padding:20px}
+
+button,input,select{
+  padding:10px;
+  margin:5px;
+  font-size:16px;
 }
 
 .qr{
   background:white;
   padding:20px;
   border-radius:20px;
-  width:320px;
+  width:300px;
   margin:20px auto;
   color:black;
-}
-
-button,input,select{
-  padding:10px;
-  margin:5px;
-  font-size:16px;
 }
 </style>
 
@@ -44,8 +40,7 @@ import {
   doc,
   setDoc,
   updateDoc,
-  onSnapshot,
-  getDoc
+  onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 /* ---------------- FIREBASE ---------------- */
@@ -78,17 +73,11 @@ const questions = [
   "Frisbeekast"
 ];
 
-/* ---------------- VIEW CONTROL (IMPORTANT FIX) ---------------- */
-
-function hideAll(){
-  document.querySelectorAll(".view").forEach(v=>{
-    v.style.display = "none";
-  });
-}
+/* ---------------- VIEW ---------------- */
 
 function show(id){
-  hideAll();
-  document.getElementById(id).style.display = "block";
+  document.querySelectorAll(".view").forEach(v=>v.style.display="none");
+  document.getElementById(id).style.display="block";
 }
 
 /* ---------------- INIT ---------------- */
@@ -98,7 +87,7 @@ window.addEventListener("load", () => {
   listen();
 
   if(mode === "admin"){
-    show("adminLobby"); // 🔥 ALWAYS FIRST, NO SNAPSHOT INVOLVED
+    show("adminLobby");
     generateQR();
   } else {
     show("login");
@@ -115,24 +104,22 @@ function generateQR(){
     + encodeURIComponent(url);
 }
 
-/* ---------------- LISTEN ---------------- */
+/* ---------------- FIREBASE LISTEN ---------------- */
 
 function listen(){
   onSnapshot(doc(db,"game","state"), snap=>{
     if(!snap.exists()) return;
-
-    const data = snap.data();
-    render(data);
+    render(snap.data());
   });
 }
 
-/* ---------------- RENDER (SPLIT LOGIC FIX) ---------------- */
+/* ---------------- RENDER ---------------- */
 
 function render(data){
 
   const q = questions[data.currentRound] || "Ferdig!";
 
-  /* ---------------- ADMIN FLOW ---------------- */
+  /* ---------------- ADMIN ---------------- */
   if(mode === "admin"){
 
     document.getElementById("adminState").innerText =
@@ -140,16 +127,15 @@ function render(data){
 
     document.getElementById("currentQuestion").innerText = q;
 
-    // 🔥 IMPORTANT: NO AUTO SWITCH ON FIRST LOAD
-    // only switch AFTER state exists
     if(data.gameState === "lobby"){
       show("adminLobby");
-    } else {
-      show("adminControl");
+      return;
     }
+
+    show("adminControl");
   }
 
-  /* ---------------- PLAYER FLOW ---------------- */
+  /* ---------------- PLAYER ---------------- */
   if(mode !== "admin"){
 
     const title = document.getElementById("title");
@@ -197,7 +183,7 @@ window.join = async () => {
   show("player");
 };
 
-/* ---------------- ADMIN ---------------- */
+/* ---------------- ADMIN CONTROL ---------------- */
 
 window.startGame = async () => {
   await setDoc(doc(db,"game","state"),{
@@ -261,7 +247,7 @@ window.next = async () => {
 </div>
 </div>
 
-<!-- ADMIN LOBBY (FIXED STABLE FRONT PAGE) -->
+<!-- ADMIN LOBBY -->
 <div id="adminLobby" class="view">
 <h1>Alle mot Daniel</h1>
 
