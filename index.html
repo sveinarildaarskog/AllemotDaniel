@@ -60,15 +60,15 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* ---------------- MODE ---------------- */
+/* ---------------- STATE CONTROL ---------------- */
 
 const mode = new URLSearchParams(window.location.search).get("mode") || "player";
 
 let player = localStorage.getItem("player") || "";
 let currentRound = 0;
 
-/* 🔥 VIKTIG: hindrer auto-start */
-let adminReady = false;
+/* 🔥 HARD CONTROL (STOPP AUTO-HOP) */
+window.started = false;
 
 /* ---------------- QUESTIONS ---------------- */
 
@@ -98,7 +98,7 @@ window.addEventListener("load", () => {
   listenPlayers();
 
   if(mode === "admin"){
-    adminReady = false;   // 🔥 viktig reset
+    window.started = false;
     show("adminLobby");
     generateQR();
   } else {
@@ -116,7 +116,7 @@ function generateQR(){
     + encodeURIComponent(url);
 }
 
-/* ---------------- GAME LISTENER ---------------- */
+/* ---------------- FIREBASE LISTEN ---------------- */
 
 function listenGame(){
   onSnapshot(doc(db,"game","state"), snap => {
@@ -124,7 +124,14 @@ function listenGame(){
     if(!snap.exists()) return;
 
     const data = snap.data();
+
     currentRound = data.currentRound || 0;
+
+    /* 🔥 BLOCK AUTO HOP */
+    if(mode === "admin" && !window.started){
+      show("adminLobby");
+      return;
+    }
 
     render(data);
   });
@@ -152,23 +159,15 @@ function render(data){
 
   const q = questions[data.currentRound] || "Ferdig!";
 
-  /* ---------------- ADMIN ---------------- */
   if(mode === "admin"){
-
-    // 🔥 VIKTIG: alltid vis lobby hvis ikke startet
-    if(!adminReady){
-      show("adminLobby");
-      return;
-    }
 
     show("adminControl");
 
     document.getElementById("currentQuestion").innerText = q;
     document.getElementById("adminState").innerText =
-      `Runde: ${data.currentRound} | State: ${data.gameState}`;
+      `State: ${data.gameState} | Runde: ${data.currentRound}`;
   }
 
-  /* ---------------- PLAYER ---------------- */
   if(mode !== "admin"){
 
     const title = document.getElementById("title");
@@ -210,21 +209,23 @@ window.join = async () => {
   show("player");
 };
 
-/* ---------------- ADMIN ACTIONS ---------------- */
+/* ---------------- ADMIN ---------------- */
 
 window.resetGame = async () => {
 
-  adminReady = false;
+  window.started = false;
 
   await setDoc(doc(db,"game","state"),{
     gameState:"lobby",
     currentRound:0
   });
+
+  show("adminLobby");
 };
 
 window.startGame = async () => {
 
-  adminReady = true;
+  window.started = true;
 
   await setDoc(doc(db,"game","state"),{
     gameState:"question",
