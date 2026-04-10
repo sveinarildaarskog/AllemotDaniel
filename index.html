@@ -1,10 +1,16 @@
 <!DOCTYPE html>
 <html lang="no">
 <head>
-<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alle mot Daniel - FULL PRO</title>
+<title>Alle mot Daniel - FINAL PRO</title>
+
+<!-- QR CODE LIB -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+<!-- CHART -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -24,12 +30,10 @@ let role = localStorage.getItem("role") || "player";
 let round = 0;
 let locked = false;
 
-let scores = { daniel: 0, crowd: 0 };
-
 const questions = [
-  "Sengestrekk",
-  "Straffespark",
-  "Bottle flip",
+  "Sengestrekk (1–15 min)",
+  "Straffespark (0–20)",
+  "Bottle flip (0–15)",
   "Vannpistol og telys",
   "Biola bånnski",
   "Vann på hodet",
@@ -42,9 +46,30 @@ function show(id){
   document.getElementById(id).style.display="block";
 }
 
+// MODE ROUTING
 if(mode === "admin") show("adminLobby");
 else show(player ? "game" : "login");
 
+// QR GENERERING (ADMIN)
+function makeQR(){
+  const url = window.location.origin + window.location.pathname;
+  const canvas = document.getElementById("qr");
+  const link = document.getElementById("joinLink");
+
+  if(!canvas) return;
+
+  link.innerText = url;
+
+  QRCode.toCanvas(canvas, url, function (err) {
+    if(err) console.error(err);
+  });
+}
+
+setTimeout(()=>{
+  if(mode === "admin") makeQR();
+},500);
+
+// JOIN
 window.join = async () => {
   const name = document.getElementById("name").value;
   const selectedRole = document.getElementById("role").value;
@@ -52,131 +77,68 @@ window.join = async () => {
 
   player = name;
   role = selectedRole;
+
   localStorage.setItem("player", name);
   localStorage.setItem("role", selectedRole);
 
-  await setDoc(doc(db, "players", name), {
+  await setDoc(doc(db,"players",name),{
     name,
     role,
-    score: 0,
-    totalDiff: 0
+    score:0,
+    totalDiff:0
   });
 
   show("game");
 };
 
+// SEND SVAR
+window.sendAnswer = async () => {
+  if(locked) return;
+  const val = Number(document.getElementById("slider").value);
+
+  await addDoc(collection(db,"answers"),{
+    name:player,
+    role,
+    value:val,
+    round
+  });
+};
+
+// START GAME
 window.startGame = () => {
   show("adminGame");
   document.getElementById("questionTitle").innerText = questions[round];
 };
 
+// TIMER
 window.startTimer = () => {
   locked = false;
-  let time = 30;
+  let t = 30;
   const el = document.getElementById("timer");
 
-  const interval = setInterval(() => {
-    el.innerText = "Tid: " + time;
-    time--;
-    if(time < 0){
-      clearInterval(interval);
+  const i = setInterval(()=>{
+    el.innerText = "Tid: " + t;
+    t--;
+    if(t < 0){
+      clearInterval(i);
       locked = true;
-      calculateRound();
     }
-  }, 1000);
+  },1000);
 };
 
-window.sendAnswer = async () => {
-  if(locked) return;
-  const val = Number(document.getElementById("slider").value);
-  await addDoc(collection(db, "answers"), {
-    name: player,
-    role,
-    value: val,
-    round
-  });
-};
-
-async function calculateRound(){
-  const snap = await getDocs(collection(db, "answers"));
-
-  let crowd = [];
-  let daniel = null;
-
-  snap.forEach(d=>{
-    const a = d.data();
-    if(a.round===round){
-      if(a.role === "daniel") daniel = a.value;
-      else crowd.push(a.value);
-    }
-  });
-
-  if(!crowd.length || daniel === null) return;
-
-  const avg = crowd.reduce((a,b)=>a+b,0)/crowd.length;
-  const correct = 50; // midlertidig
-
-  const crowdDiff = Math.abs(avg - correct);
-  const danielDiff = Math.abs(daniel - correct);
-
-  if(danielDiff <= crowdDiff) scores.daniel++;
-  else scores.crowd++;
-
-  document.getElementById("result").innerText = `Daniel: ${scores.daniel} | Publikum: ${scores.crowd}`;
-
-  // Oppdater individuelle stats
-  const playersSnap = await getDocs(collection(db, "players"));
-
-  playersSnap.forEach(async p=>{
-    const data = p.data();
-    const ans = snap.docs.find(a=>a.data().name===data.name && a.data().round===round);
-    if(ans){
-      const diff = Math.abs(ans.data().value - correct);
-      await updateDoc(doc(db,"players",data.name),{
-        totalDiff: (data.totalDiff||0) + diff
-      });
-    }
-  });
-}
-
-window.next = ()=>{
+// NEXT ROUND
+window.next = () => {
   round++;
-  if(round >= questions.length){
-    endGame();
-    return;
-  }
-  document.getElementById("questionTitle").innerText = questions[round];
+  document.getElementById("questionTitle").innerText = questions[round] || "Ferdig";
 };
 
-async function endGame(){
-  const snap = await getDocs(collection(db, "players"));
-  let arr = [];
-
-  snap.forEach(d=>{
-    const p = d.data();
-    if(p.role !== "daniel") arr.push(p);
-  });
-
-  arr.sort((a,b)=>a.totalDiff-b.totalDiff);
-
-  let top5 = arr.slice(0,5).map((p,i)=>`${i+1}. ${p.name}`).join("<br>");
-
-  document.getElementById("final").innerHTML = `
-    <h1>Sluttresultat</h1>
-    <h2>Daniel: ${scores.daniel} | Publikum: ${scores.crowd}</h2>
-    <h2>Topp 5:</h2>
-    ${top5}
-  `;
-
-  show("final");
-}
-
-onSnapshot(collection(db, "players"), snap => {
+// PLAYER LIST
+onSnapshot(collection(db,"players"),snap=>{
   const list = document.getElementById("players");
   if(!list) return;
-  list.innerHTML="";
+  list.innerHTML = "";
   snap.forEach(d=>{
-    const p=d.data();
+    const p = d.data();
     list.innerHTML += `<div>${p.name} (${p.role})</div>`;
   });
 });
@@ -188,10 +150,12 @@ body{font-family:Arial;background:#111;color:white;text-align:center}
 .view{display:none;padding:20px}
 input,button{padding:10px;margin:5px}
 .slider{width:80%}
+canvas{background:white;border-radius:10px}
 </style>
 </head>
 <body>
 
+<!-- LOGIN -->
 <div id="login" class="view">
 <h1>Alle mot Daniel</h1>
 <input id="name" placeholder="Kallenavn"><br>
@@ -202,26 +166,28 @@ input,button{padding:10px;margin:5px}
 <button onclick="join()">Bli med</button>
 </div>
 
+<!-- ADMIN LOBBY -->
 <div id="adminLobby" class="view">
 <h1>Scan QR og bli med</h1>
 
 <canvas id="qr"></canvas>
-
 <p id="joinLink"></p>
 
+<h3>Deltakere:</h3>
 <div id="players"></div>
 
 <button onclick="startGame()">Start spillet</button>
 </div>
 
+<!-- ADMIN GAME -->
 <div id="adminGame" class="view">
 <h1 id="questionTitle"></h1>
 <h2 id="timer">Tid: 30</h2>
-<button onclick="startTimer()">Nedtelling</button>
+<button onclick="startTimer()">Start nedtelling</button>
 <button onclick="next()">Neste</button>
-<h2 id="result"></h2>
 </div>
 
+<!-- PLAYER / DANIEL -->
 <div id="game" class="view">
 <h2 id="q"></h2>
 <input type="range" min="0" max="100" value="50" id="slider" class="slider">
@@ -229,21 +195,10 @@ input,button{padding:10px;margin:5px}
 <button onclick="sendAnswer()">Svar</button>
 </div>
 
-<div id="final" class="view"></div>
-
 <script>
 const slider = document.getElementById("slider");
 if(slider){
   slider.oninput = () => document.getElementById("val").innerText = slider.value;
-}
-  if(mode === "admin"){
-  const url = window.location.origin + window.location.pathname;
-  
-  document.getElementById("joinLink").innerText = url;
-
-  QRCode.toCanvas(document.getElementById("qr"), url, function (error) {
-    if (error) console.error(error);
-  });
 }
 </script>
 
