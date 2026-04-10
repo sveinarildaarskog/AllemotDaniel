@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alle mot Daniel - STATE VERSION</title>
+<title>Alle mot Daniel - PRO STATE</title>
 
 <style>
 body{
@@ -22,16 +22,15 @@ button,input,select{
   font-size:16px;
 }
 
-.slider{width:80%}
-
 .card{
   background:#222;
   padding:20px;
   margin:20px auto;
-  width:90%;
   max-width:500px;
   border-radius:15px;
 }
+
+.slider{width:80%}
 </style>
 
 <script type="module">
@@ -41,11 +40,10 @@ import {
   getFirestore,
   doc,
   setDoc,
-  getDoc,
+  updateDoc,
   onSnapshot,
   collection,
-  addDoc,
-  updateDoc
+  addDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 /* ---------------- FIREBASE ---------------- */
@@ -78,7 +76,7 @@ function show(id){
 
 /* ---------------- INIT ---------------- */
 
-window.addEventListener("load", async () => {
+window.addEventListener("load", () => {
 
   listenGameState();
 
@@ -89,11 +87,10 @@ window.addEventListener("load", async () => {
   }
 });
 
-/* ---------------- GAME STATE LISTENER ---------------- */
+/* ---------------- GAME STATE ---------------- */
 
 function listenGameState(){
-  onSnapshot(doc(db,"game","state"), (snap) => {
-
+  onSnapshot(doc(db,"game","state"), snap=>{
     if(!snap.exists()) return;
 
     const data = snap.data();
@@ -101,53 +98,52 @@ function listenGameState(){
     gameState = data.gameState;
     currentRound = data.currentRound;
 
-    renderPlayerUI(data);
-    renderAdminUI(data);
+    renderPlayer(data);
+    renderAdmin(data);
   });
 }
 
 /* ---------------- PLAYER UI ---------------- */
 
-function renderPlayerUI(state){
+function renderPlayer(state){
 
   if(mode === "admin") return;
 
   const title = document.getElementById("title");
-  const sliderBox = document.getElementById("sliderBox");
+  const box = document.getElementById("answerBox");
 
   if(state.gameState === "waiting"){
     show("player");
     title.innerText = "Venter på neste oppgave...";
-    sliderBox.style.display = "none";
+    box.style.display = "none";
   }
 
   if(state.gameState === "question"){
     show("player");
-    title.innerText = "Oppgave kommer...";
-    sliderBox.style.display = "none";
+    title.innerText = "Oppgave vises snart...";
+    box.style.display = "none";
   }
 
   if(state.gameState === "answering"){
     show("player");
-    title.innerText = "Gi svar nå!";
-    sliderBox.style.display = "block";
+    title.innerText = "SVAR NÅ!";
+    box.style.display = "block";
   }
 
   if(state.gameState === "locked"){
     show("player");
     title.innerText = "Svar låst!";
-    sliderBox.style.display = "none";
+    box.style.display = "none";
   }
 }
 
 /* ---------------- ADMIN UI ---------------- */
 
-function renderAdminUI(state){
-
+function renderAdmin(state){
   if(mode !== "admin") return;
 
   document.getElementById("adminState").innerText =
-    "State: " + state.gameState + " | Runde: " + state.currentRound;
+    `State: ${state.gameState} | Runde: ${state.currentRound}`;
 }
 
 /* ---------------- JOIN ---------------- */
@@ -167,13 +163,37 @@ window.join = async () => {
 
   await setDoc(doc(db,"players",name),{
     name,
-    role
+    role,
+    online:true,
+    lastSeen:Date.now()
   });
 
   show("player");
 };
 
-/* ---------------- SEND ANSWER ---------------- */
+/* ---------------- ONLINE PRESENCE ---------------- */
+
+/* heartbeat */
+setInterval(async ()=>{
+  if(!player) return;
+
+  await updateDoc(doc(db,"players",player),{
+    online:true,
+    lastSeen:Date.now()
+  });
+
+},5000);
+
+/* disconnect */
+window.addEventListener("beforeunload", async ()=>{
+  if(!player) return;
+
+  await updateDoc(doc(db,"players",player),{
+    online:false
+  });
+});
+
+/* ---------------- ANSWER ---------------- */
 
 window.sendAnswer = async () => {
 
@@ -192,7 +212,6 @@ window.sendAnswer = async () => {
 /* ---------------- ADMIN CONTROL ---------------- */
 
 window.setQuestion = async () => {
-
   await setDoc(doc(db,"game","state"),{
     gameState:"question",
     currentRound
@@ -200,21 +219,18 @@ window.setQuestion = async () => {
 };
 
 window.startAnswer = async () => {
-
   await updateDoc(doc(db,"game","state"),{
     gameState:"answering"
   });
 };
 
 window.lockAnswers = async () => {
-
   await updateDoc(doc(db,"game","state"),{
     gameState:"locked"
   });
 };
 
 window.nextRound = async () => {
-
   currentRound++;
 
   await updateDoc(doc(db,"game","state"),{
@@ -223,6 +239,27 @@ window.nextRound = async () => {
   });
 };
 
+/* ---------------- PLAYER LIST ---------------- */
+
+onSnapshot(collection(db,"players"), snap=>{
+  const list = document.getElementById("players");
+  if(!list) return;
+
+  list.innerHTML = "";
+
+  const now = Date.now();
+
+  snap.forEach(d=>{
+    const p = d.data();
+
+    const online = (now - p.lastSeen) < 10000;
+
+    if(!online) return;
+
+    list.innerHTML += `<div>${p.name} (${p.role})</div>`;
+  });
+});
+
 </script>
 </head>
 
@@ -230,43 +267,46 @@ window.nextRound = async () => {
 
 <!-- LOGIN -->
 <div id="login" class="view">
-  <h1>Alle mot Daniel</h1>
+<h1>Alle mot Daniel</h1>
 
-  <input id="name" placeholder="Kallenavn"><br>
+<input id="name" placeholder="Kallenavn"><br>
 
-  <select id="role">
-    <option value="player">Deltaker</option>
-    <option value="daniel">Daniel</option>
-  </select><br>
+<select id="role">
+  <option value="player">Deltaker</option>
+  <option value="daniel">Daniel</option>
+</select><br>
 
-  <button onclick="join()">Bli med</button>
+<button onclick="join()">Bli med</button>
 </div>
 
 <!-- PLAYER -->
 <div id="player" class="view">
-  <div class="card">
+<div class="card">
 
-    <h2 id="title">Venter...</h2>
+<h2 id="title">Venter...</h2>
 
-    <div id="sliderBox" style="display:none;">
-      <input type="range" min="0" max="100" value="50" id="slider">
-      <div id="val">50</div>
-      <button onclick="sendAnswer()">Svar</button>
-    </div>
+<div id="answerBox" style="display:none;">
+  <input type="range" min="0" max="100" value="50" id="slider">
+  <div id="val">50</div>
+  <button onclick="sendAnswer()">Svar</button>
+</div>
 
-  </div>
+</div>
 </div>
 
 <!-- ADMIN -->
 <div id="admin" class="view">
-  <h1>ADMIN PANEL</h1>
+<h1>ADMIN</h1>
 
-  <h3 id="adminState">Loading...</h3>
+<h3 id="adminState"></h3>
 
-  <button onclick="setQuestion()">Vis oppgave</button>
-  <button onclick="startAnswer()">Start svar</button>
-  <button onclick="lockAnswers()">Lås svar</button>
-  <button onclick="nextRound()">Neste runde</button>
+<button onclick="setQuestion()">Vis oppgave</button>
+<button onclick="startAnswer()">Start svar</button>
+<button onclick="lockAnswers()">Lås</button>
+<button onclick="nextRound()">Neste</button>
+
+<h3>Deltakere (online)</h3>
+<div id="players"></div>
 </div>
 
 <script>
