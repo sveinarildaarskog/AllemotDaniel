@@ -1,12 +1,9 @@
 <!DOCTYPE html>
 <html lang="no">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Alle mot Daniel</title>
-
-<!-- QR LIB (STABIL) -->
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alle mot Daniel - FINAL STABLE</title>
 
 <style>
 body{
@@ -19,34 +16,29 @@ body{
 
 .view{display:none;padding:20px}
 
-/* KAHOOT STYLE QR */
-.qr-card{
-  background:white;
-  color:black;
-  width:320px;
-  margin:30px auto;
-  padding:20px;
-  border-radius:20px;
-  box-shadow:0 10px 30px rgba(0,0,0,0.5);
-}
-
-#qr{
-  width:280px !important;
-  height:280px !important;
-}
-
-button,input,select{
+input,select,button{
   padding:10px;
   margin:5px;
   font-size:16px;
 }
 
-.slider{width:80%}
+.qr-box{
+  background:white;
+  padding:20px;
+  border-radius:20px;
+  width:320px;
+  margin:20px auto;
+}
+
+.qr-box img{
+  width:280px;
+  height:280px;
+}
 </style>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot } 
+import { getFirestore, doc, setDoc, collection, addDoc, onSnapshot }
 from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -62,17 +54,17 @@ const mode = new URLSearchParams(window.location.search).get("mode") || "player"
 
 let player = localStorage.getItem("player") || "";
 let role = localStorage.getItem("role") || "player";
+
 let round = 0;
 let locked = false;
 
-/* ---------- VIEW SYSTEM ---------- */
+/* ---------------- NAVIGASJON ---------------- */
 function show(id){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   document.getElementById(id).style.display="block";
 }
 
-/* ---------- INIT ---------- */
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("load", () => {
   if(mode === "admin"){
     show("adminLobby");
     generateQR();
@@ -81,39 +73,26 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-/* ---------- QR (KAHOOT STYLE FIXED) ---------- */
+/* ---------------- QR (100% STABIL) ---------------- */
 function generateQR(){
-
   const url = window.location.origin + window.location.pathname + "?mode=join";
 
-  const canvas = document.getElementById("qr");
+  const img = document.getElementById("qr");
   const link = document.getElementById("joinLink");
-
-  if(!canvas){
-    console.log("QR canvas mangler");
-    return;
-  }
 
   link.innerText = url;
 
-  QRCode.toCanvas(canvas, url, {
-    width: 280,
-    color: {
-      dark:"#000000",
-      light:"#ffffff"
-    }
-  }, function (err) {
-    if(err) console.error("QR error:", err);
-    else console.log("QR OK");
-  });
+  img.src =
+    "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
+    + encodeURIComponent(url);
 }
 
-/* ---------- JOIN ---------- */
+/* ---------------- JOIN ---------------- */
 window.join = async () => {
   const name = document.getElementById("name").value;
   const selectedRole = document.getElementById("role").value;
 
-  if(!name) return alert("Skriv kallenavn");
+  if(!name) return alert("Skriv navn");
 
   player = name;
   role = selectedRole;
@@ -129,9 +108,9 @@ window.join = async () => {
   show("game");
 };
 
-/* ---------- ANSWER ---------- */
+/* ---------------- SEND SVAR ---------------- */
 window.sendAnswer = async () => {
-  if(locked) return alert("Låst");
+  if(locked) return alert("Svar låst");
 
   const val = Number(document.getElementById("slider").value);
 
@@ -143,11 +122,11 @@ window.sendAnswer = async () => {
   });
 };
 
-/* ---------- TIMER ---------- */
+/* ---------------- TIMER ---------------- */
 window.startTimer = () => {
   locked = false;
-  let t = 30;
 
+  let t = 30;
   const el = document.getElementById("timer");
 
   const i = setInterval(()=>{
@@ -161,13 +140,14 @@ window.startTimer = () => {
   },1000);
 };
 
-/* ---------- NEXT ---------- */
+/* ---------------- NEXT ROUND ---------------- */
 window.next = () => {
   round++;
-  document.getElementById("questionTitle").innerText = "Runde " + (round+1);
+  document.getElementById("questionTitle").innerText =
+    "Runde " + (round+1);
 };
 
-/* ---------- PLAYERS LIVE ---------- */
+/* ---------------- LIVE PLAYERS ---------------- */
 onSnapshot(collection(db,"players"),snap=>{
   const list = document.getElementById("players");
   if(!list) return;
@@ -187,52 +167,57 @@ onSnapshot(collection(db,"players"),snap=>{
 
 <!-- LOGIN -->
 <div id="login" class="view">
-  <h1>Alle mot Daniel</h1>
-  <input id="name" placeholder="Kallenavn"><br>
-  <select id="role">
-    <option value="player">Deltaker</option>
-    <option value="daniel">Daniel</option>
-  </select><br>
-  <button onclick="join()">Bli med</button>
+<h1>Alle mot Daniel</h1>
+
+<input id="name" placeholder="Kallenavn"><br>
+
+<select id="role">
+  <option value="player">Deltaker</option>
+  <option value="daniel">Daniel</option>
+</select><br>
+
+<button onclick="join()">Bli med</button>
 </div>
 
-<!-- ADMIN LOBBY (KAHOOT STYLE QR) -->
+<!-- ADMIN LOBBY -->
 <div id="adminLobby" class="view">
+<h1>Scan QR og bli med</h1>
 
-  <h1>Scan QR for å bli med</h1>
+<div class="qr-box">
+  <img id="qr">
+</div>
 
-  <div class="qr-card">
-    <canvas id="qr"></canvas>
-    <p id="joinLink"></p>
-  </div>
+<p id="joinLink"></p>
 
-  <h3>Deltakere</h3>
-  <div id="players"></div>
+<h3>Deltakere</h3>
+<div id="players"></div>
 
-  <button onclick="show('adminGame')">Start spillet</button>
+<button onclick="show('adminGame')">Start spillet</button>
 </div>
 
 <!-- ADMIN GAME -->
 <div id="adminGame" class="view">
-  <h1 id="questionTitle">Spill ikke startet</h1>
-  <h2 id="timer">Tid: 30</h2>
-  <button onclick="startTimer()">Start nedtelling</button>
-  <button onclick="next()">Neste</button>
+<h1 id="questionTitle">Spill starter</h1>
+
+<h2 id="timer">Tid: 30</h2>
+
+<button onclick="startTimer()">Start nedtelling</button>
+<button onclick="next()">Neste</button>
 </div>
 
-<!-- GAME -->
+<!-- SPILLER -->
 <div id="game" class="view">
-  <h2>Gi svar</h2>
+<h2>Gi svar</h2>
 
-  <input type="range" min="0" max="100" value="50" id="slider" class="slider">
-  <div id="val">50</div>
+<input type="range" min="0" max="100" value="50" id="slider">
+<div id="val">50</div>
 
-  <button onclick="sendAnswer()">Svar</button>
+<button onclick="sendAnswer()">Svar</button>
 </div>
 
 <script>
 document.addEventListener("input", e=>{
-  if(e.target.id==="slider"){
+  if(e.target.id === "slider"){
     document.getElementById("val").innerText = e.target.value;
   }
 });
