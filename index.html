@@ -27,8 +27,7 @@ import {
   addDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-/* ---------------- FIREBASE ---------------- */
-
+/* FIREBASE */
 const firebaseConfig = {
   apiKey: "AIzaSyDE7W...",
   authDomain: "alle-mot-konfirmanten.firebaseapp.com",
@@ -38,16 +37,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* ---------------- STATE ---------------- */
-
+/* STATE */
 const mode = (new URLSearchParams(window.location.search).get("mode") || "player").toLowerCase();
 
 let player = localStorage.getItem("player") || "";
 let currentRound = 0;
 let started = false;
 
-/* ---------------- QUESTIONS ---------------- */
-
+/* QUESTIONS */
 const questions = [
   "Sengestrekk",
   "Straffespark",
@@ -59,15 +56,13 @@ const questions = [
   "Frisbeekast"
 ];
 
-/* ---------------- VIEW ---------------- */
-
+/* UI */
 function show(id){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   document.getElementById(id).style.display="block";
 }
 
-/* ---------------- INIT ---------------- */
-
+/* INIT */
 window.addEventListener("load", () => {
 
   listenGame();
@@ -77,22 +72,24 @@ window.addEventListener("load", () => {
     show("adminLobby");
     generateQR();
   } else {
-    show("login");
+    if(player){
+      show("player");
+      startHeartbeat();
+    } else {
+      show("login");
+    }
   }
 });
 
-/* ---------------- QR ---------------- */
-
+/* QR */
 function generateQR(){
   const url = window.location.origin + window.location.pathname + "?mode=player";
-
   document.getElementById("qr").src =
     "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
     + encodeURIComponent(url);
 }
 
-/* ---------------- GAME ---------------- */
-
+/* GAME LISTENER */
 function listenGame(){
   onSnapshot(doc(db,"game","state"), snap => {
 
@@ -101,18 +98,22 @@ function listenGame(){
     const data = snap.data();
     currentRound = data.currentRound || 0;
 
+    // ADMIN
     if(mode === "admin"){
-
       if(!started){
         show("adminLobby");
         return;
       }
 
       show("adminControl");
-
       document.getElementById("currentQuestion").innerText =
         questions[currentRound] || "Ferdig!";
+      return;
+    }
 
+    // 🔥 VIKTIG: STOPP hvis ikke logget inn
+    if(!player){
+      show("login");
       return;
     }
 
@@ -120,8 +121,7 @@ function listenGame(){
   });
 }
 
-/* ---------------- PLAYER VIEW ---------------- */
-
+/* PLAYER VIEW */
 function renderPlayer(data){
 
   const title = document.getElementById("title");
@@ -146,8 +146,7 @@ function renderPlayer(data){
   }
 }
 
-/* ---------------- PLAYERS (SMART CLEANUP) ---------------- */
-
+/* PLAYERS */
 function listenPlayers(){
   onSnapshot(collection(db,"players"), snap => {
 
@@ -161,7 +160,6 @@ function listenPlayers(){
     snap.forEach(d=>{
       const p = d.data();
 
-      // 🔥 kun aktive siste 10 sek
       if(now - (p.lastSeen || 0) < 10000){
         list.innerHTML += `<div>👤 ${p.name}</div>`;
       }
@@ -169,8 +167,7 @@ function listenPlayers(){
   });
 }
 
-/* ---------------- JOIN ---------------- */
-
+/* JOIN */
 window.join = async () => {
 
   const name = document.getElementById("name").value;
@@ -184,12 +181,10 @@ window.join = async () => {
   });
 
   startHeartbeat();
-
   show("player");
 };
 
-/* ---------------- HEARTBEAT ---------------- */
-
+/* HEARTBEAT */
 function startHeartbeat(){
   setInterval(async () => {
     if(player){
@@ -200,20 +195,16 @@ function startHeartbeat(){
   }, 5000);
 }
 
-/* ---------------- CLEAN EXIT ---------------- */
-
+/* CLEAN EXIT */
 window.addEventListener("beforeunload", () => {
   if(player){
     deleteDoc(doc(db,"players",player));
   }
 });
 
-/* ---------------- ADMIN ---------------- */
-
+/* ADMIN */
 window.startGame = async () => {
-
   started = true;
-
   await setDoc(doc(db,"game","state"),{
     gameState:"question",
     currentRound:0
@@ -221,14 +212,11 @@ window.startGame = async () => {
 };
 
 window.resetGame = async () => {
-
   started = false;
-
   await setDoc(doc(db,"game","state"),{
     gameState:"lobby",
     currentRound:0
   });
-
   show("adminLobby");
 };
 
@@ -259,8 +247,7 @@ window.next = async () => {
   });
 };
 
-/* ---------------- ANSWER ---------------- */
-
+/* ANSWER */
 window.sendAnswer = async () => {
 
   const val = document.getElementById("slider").value;
