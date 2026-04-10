@@ -40,7 +40,7 @@ const db = getFirestore(app);
 /* STATE */
 const mode = (new URLSearchParams(window.location.search).get("mode") || "player").toLowerCase();
 
-let player = localStorage.getItem("player") || "";
+let player = ""; // 🔥 IKKE localStorage
 let currentRound = 0;
 let started = false;
 
@@ -72,12 +72,7 @@ window.addEventListener("load", () => {
     show("adminLobby");
     generateQR();
   } else {
-    if(player){
-      show("player");
-      startHeartbeat();
-    } else {
-      show("login");
-    }
+    show("login"); // 🔥 ALLTID login
   }
 });
 
@@ -89,7 +84,7 @@ function generateQR(){
     + encodeURIComponent(url);
 }
 
-/* GAME LISTENER */
+/* GAME */
 function listenGame(){
   onSnapshot(doc(db,"game","state"), snap => {
 
@@ -98,7 +93,6 @@ function listenGame(){
     const data = snap.data();
     currentRound = data.currentRound || 0;
 
-    // ADMIN
     if(mode === "admin"){
       if(!started){
         show("adminLobby");
@@ -111,7 +105,7 @@ function listenGame(){
       return;
     }
 
-    // 🔥 VIKTIG: STOPP hvis ikke logget inn
+    // 🔥 hvis ikke logget inn → STOPP
     if(!player){
       show("login");
       return;
@@ -121,7 +115,7 @@ function listenGame(){
   });
 }
 
-/* PLAYER VIEW */
+/* PLAYER */
 function renderPlayer(data){
 
   const title = document.getElementById("title");
@@ -159,7 +153,6 @@ function listenPlayers(){
 
     snap.forEach(d=>{
       const p = d.data();
-
       if(now - (p.lastSeen || 0) < 10000){
         list.innerHTML += `<div>👤 ${p.name}</div>`;
       }
@@ -173,7 +166,6 @@ window.join = async () => {
   const name = document.getElementById("name").value;
 
   player = name;
-  localStorage.setItem("player", name);
 
   await setDoc(doc(db,"players",name),{
     name,
@@ -195,7 +187,7 @@ function startHeartbeat(){
   }, 5000);
 }
 
-/* CLEAN EXIT */
+/* EXIT */
 window.addEventListener("beforeunload", () => {
   if(player){
     deleteDoc(doc(db,"players",player));
