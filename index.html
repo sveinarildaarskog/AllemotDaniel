@@ -11,6 +11,7 @@ body{margin:0;font-family:Arial;background:#111;color:white;text-align:center;}
 button,input{padding:10px;margin:5px;font-size:16px;}
 .qr{background:white;padding:20px;border-radius:20px;width:280px;margin:20px auto;color:black;}
 #playersList div{padding:4px;}
+.bigTimer{font-size:50px;margin:20px;}
 </style>
 
 <script type="module">
@@ -27,7 +28,6 @@ import {
   addDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-/* FIREBASE */
 const firebaseConfig = {
   apiKey: "AIzaSyDE7W...",
   authDomain: "alle-mot-konfirmanten.firebaseapp.com",
@@ -37,12 +37,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* STATE */
 const mode = (new URLSearchParams(window.location.search).get("mode") || "player").toLowerCase();
 
-let player = ""; // 🔥 IKKE localStorage
-let currentRound = 0;
-let started = false;
+let player = "";
+let hasAnswered = false;
+let timerInterval;
 
 /* QUESTIONS */
 const questions = [
@@ -56,13 +55,11 @@ const questions = [
   "Frisbeekast"
 ];
 
-/* UI */
 function show(id){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   document.getElementById(id).style.display="block";
 }
 
-/* INIT */
 window.addEventListener("load", () => {
 
   listenGame();
@@ -72,7 +69,7 @@ window.addEventListener("load", () => {
     show("adminLobby");
     generateQR();
   } else {
-    show("login"); // 🔥 ALLTID login
+    show("login");
   }
 });
 
@@ -89,23 +86,13 @@ function listenGame(){
   onSnapshot(doc(db,"game","state"), snap => {
 
     if(!snap.exists()) return;
-
     const data = snap.data();
-    currentRound = data.currentRound || 0;
 
     if(mode === "admin"){
-      if(!started){
-        show("adminLobby");
-        return;
-      }
-
-      show("adminControl");
-      document.getElementById("currentQuestion").innerText =
-        questions[currentRound] || "Ferdig!";
+      renderAdmin(data);
       return;
     }
 
-    // 🔥 hvis ikke logget inn → STOPP
     if(!player){
       show("login");
       return;
@@ -118,26 +105,36 @@ function listenGame(){
 /* PLAYER */
 function renderPlayer(data){
 
+  show("player");
+
   const title = document.getElementById("title");
   const box = document.getElementById("answerBox");
 
-  if(data.gameState === "lobby"){
-    show("player");
-    title.innerText = "Venter på start...";
-    box.style.display = "none";
-  }
-
-  if(data.gameState === "question"){
-    show("player");
-    title.innerText = questions[currentRound];
-    box.style.display = "none";
-  }
+  title.innerText = questions[data.currentRound] || "";
 
   if(data.gameState === "answering"){
-    show("player");
-    title.innerText = questions[currentRound];
-    box.style.display = "block";
+    if(!hasAnswered){
+      box.style.display = "block";
+    }
+  } else {
+    box.style.display = "none";
   }
+}
+
+/* ADMIN */
+function renderAdmin(data){
+
+  if(data.gameState === "lobby"){
+    show("adminLobby");
+    return;
+  }
+
+  show("adminControl");
+
+  document.getElementById("currentQuestion").innerText =
+    questions[data.currentRound] || "";
+
+  document.getElementById("timer").innerText = data.timer || "";
 }
 
 /* PLAYERS */
@@ -166,56 +163,76 @@ window.join = async () => {
   const name = document.getElementById("name").value;
 
   player = name;
+  hasAnswered = false;
 
   await setDoc(doc(db,"players",name),{
     name,
     lastSeen: Date.now()
   });
 
-  startHeartbeat();
+  setInterval(async () => {
+    await updateDoc(doc(db,"players",player),{
+      lastSeen: Date.now()
+    });
+  },5000);
+
   show("player");
 };
 
-/* HEARTBEAT */
-function startHeartbeat(){
-  setInterval(async () => {
-    if(player){
-      await updateDoc(doc(db,"players",player),{
-        lastSeen: Date.now()
-      });
-    }
-  }, 5000);
-}
+/* SEND ANSWER */
+window.sendAnswer = async () => {
 
-/* EXIT */
-window.addEventListener("beforeunload", () => {
-  if(player){
-    deleteDoc(doc(db,"players",player));
-  }
-});
+  if(hasAnswered) return;
 
-/* ADMIN */
+  const val = document.getElementById("slider").value;
+
+  await addDoc(collection(db,"answers"),{
+    name: player,
+    value: Number(val),
+    time: Date.now()
+  });
+
+  hasAnswered = true;
+
+  document.getElementById("slider").disabled = true;
+  document.getElementById("answerBtn").style.display = "none";
+};
+
+/* ADMIN ACTIONS */
 window.startGame = async () => {
-  started = true;
   await setDoc(doc(db,"game","state"),{
     gameState:"question",
     currentRound:0
   });
 };
 
-window.resetGame = async () => {
-  started = false;
-  await setDoc(doc(db,"game","state"),{
-    gameState:"lobby",
-    currentRound:0
-  });
-  show("adminLobby");
-};
+window.startCountdown = async () => {
 
-window.startAnswer = async () => {
+  let time = 30;
+
   await updateDoc(doc(db,"game","state"),{
-    gameState:"answering"
+    gameState:"answering",
+    timer: time
   });
+
+  timerInterval = setInterval(async () => {
+
+    time--;
+
+    await updateDoc(doc(db,"game","state"),{
+      timer: time
+    });
+
+    if(time <= 0){
+      clearInterval(timerInterval);
+
+      await updateDoc(doc(db,"game","state"),{
+        gameState:"finished",
+        timer: 0
+      });
+    }
+
+  },1000);
 };
 
 window.next = async () => {
@@ -223,35 +240,10 @@ window.next = async () => {
   const snap = await getDoc(doc(db,"game","state"));
   const data = snap.data();
 
-  let next = (data.currentRound || 0) + 1;
-
-  if(next >= 8){
-    await updateDoc(doc(db,"game","state"),{
-      gameState:"finished",
-      currentRound:7
-    });
-    return;
-  }
-
   await updateDoc(doc(db,"game","state"),{
     gameState:"question",
-    currentRound:next
+    currentRound: data.currentRound + 1
   });
-};
-
-/* ANSWER */
-window.sendAnswer = async () => {
-
-  const val = document.getElementById("slider").value;
-
-  await addDoc(collection(db,"answers"),{
-    name: player,
-    value: Number(val),
-    round: currentRound,
-    time: Date.now()
-  });
-
-  alert("Svar sendt!");
 };
 
 </script>
@@ -270,8 +262,8 @@ window.sendAnswer = async () => {
 
 <div id="answerBox" style="display:none;">
 <input type="range" min="0" max="100" value="50" id="slider">
-<div id="sliderValue">50</div>
-<button onclick="sendAnswer()">Svar</button>
+<br>
+<button id="answerBtn" onclick="sendAnswer()">Svar</button>
 </div>
 </div>
 
@@ -282,29 +274,20 @@ window.sendAnswer = async () => {
 <img id="qr">
 </div>
 
-<button onclick="startGame()">▶ Start spill</button>
-<button onclick="resetGame()">🔄 Reset</button>
+<button onclick="startGame()">Start spill</button>
 
 <h3>Deltakere</h3>
 <div id="playersList"></div>
 </div>
 
 <div id="adminControl" class="view">
-<h1>ADMIN</h1>
-
 <h2 id="currentQuestion"></h2>
 
-<button onclick="startAnswer()">Start svar</button>
-<button onclick="next()">Neste</button>
-</div>
+<div class="bigTimer" id="timer"></div>
 
-<script>
-document.addEventListener("input", e=>{
-  if(e.target.id === "slider"){
-    document.getElementById("sliderValue").innerText = e.target.value;
-  }
-});
-</script>
+<button onclick="startCountdown()">Start nedtelling</button>
+<button onclick="next()">Neste oppgave</button>
+</div>
 
 </body>
 </html>
