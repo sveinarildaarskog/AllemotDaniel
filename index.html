@@ -6,34 +6,11 @@
 <title>Alle mot Daniel</title>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial;
-  background:#111;
-  color:white;
-  text-align:center;
-}
-
+body{margin:0;font-family:Arial;background:#111;color:white;text-align:center;}
 .view{display:none;padding:20px}
-
-button,input{
-  padding:10px;
-  margin:5px;
-  font-size:16px;
-}
-
-.qr{
-  background:white;
-  padding:20px;
-  border-radius:20px;
-  width:280px;
-  margin:20px auto;
-  color:black;
-}
-
-#playersList div{
-  padding:4px;
-}
+button,input{padding:10px;margin:5px;font-size:16px;}
+.qr{background:white;padding:20px;border-radius:20px;width:280px;margin:20px auto;color:black;}
+#playersList div{padding:4px;}
 </style>
 
 <script type="module">
@@ -44,6 +21,7 @@ import {
   doc,
   setDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   collection,
   addDoc
@@ -62,12 +40,10 @@ const db = getFirestore(app);
 
 /* ---------------- STATE ---------------- */
 
-const mode = new URLSearchParams(window.location.search).get("mode") || "player";
+const mode = (new URLSearchParams(window.location.search).get("mode") || "player").toLowerCase();
 
 let player = localStorage.getItem("player") || "";
 let currentRound = 0;
-
-/* 🔥 HARD LOCK */
 let started = false;
 
 /* ---------------- QUESTIONS ---------------- */
@@ -83,7 +59,7 @@ const questions = [
   "Frisbeekast"
 ];
 
-/* ---------------- UI ---------------- */
+/* ---------------- VIEW ---------------- */
 
 function show(id){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
@@ -98,7 +74,6 @@ window.addEventListener("load", () => {
   listenPlayers();
 
   if(mode === "admin"){
-    started = false;
     show("adminLobby");
     generateQR();
   } else {
@@ -109,14 +84,14 @@ window.addEventListener("load", () => {
 /* ---------------- QR ---------------- */
 
 function generateQR(){
-  const url = window.location.origin + window.location.pathname + "?mode=join";
+  const url = window.location.origin + window.location.pathname + "?mode=player";
 
   document.getElementById("qr").src =
     "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
     + encodeURIComponent(url);
 }
 
-/* ---------------- FIREBASE ---------------- */
+/* ---------------- GAME ---------------- */
 
 function listenGame(){
   onSnapshot(doc(db,"game","state"), snap => {
@@ -126,7 +101,6 @@ function listenGame(){
     const data = snap.data();
     currentRound = data.currentRound || 0;
 
-    /* 🔥 ADMIN CONTROL (INGEN AUTO HOP) */
     if(mode === "admin"){
 
       if(!started){
@@ -139,22 +113,16 @@ function listenGame(){
       document.getElementById("currentQuestion").innerText =
         questions[currentRound] || "Ferdig!";
 
-      document.getElementById("adminState").innerText =
-        `Runde ${currentRound} | ${data.gameState}`;
-
       return;
     }
 
-    /* PLAYER */
     renderPlayer(data);
   });
 }
 
-/* ---------------- PLAYER ---------------- */
+/* ---------------- PLAYER VIEW ---------------- */
 
 function renderPlayer(data){
-
-  const q = questions[data.currentRound] || "Ferdig!";
 
   const title = document.getElementById("title");
   const box = document.getElementById("answerBox");
@@ -167,18 +135,18 @@ function renderPlayer(data){
 
   if(data.gameState === "question"){
     show("player");
-    title.innerText = q;
+    title.innerText = questions[currentRound];
     box.style.display = "none";
   }
 
   if(data.gameState === "answering"){
     show("player");
-    title.innerText = q;
+    title.innerText = questions[currentRound];
     box.style.display = "block";
   }
 }
 
-/* ---------------- PLAYERS ---------------- */
+/* ---------------- PLAYERS (SMART CLEANUP) ---------------- */
 
 function listenPlayers(){
   onSnapshot(collection(db,"players"), snap => {
@@ -188,8 +156,15 @@ function listenPlayers(){
 
     list.innerHTML = "";
 
+    const now = Date.now();
+
     snap.forEach(d=>{
-      list.innerHTML += `<div>👤 ${d.data().name}</div>`;
+      const p = d.data();
+
+      // 🔥 kun aktive siste 10 sek
+      if(now - (p.lastSeen || 0) < 10000){
+        list.innerHTML += `<div>👤 ${p.name}</div>`;
+      }
     });
   });
 }
@@ -204,13 +179,36 @@ window.join = async () => {
   localStorage.setItem("player", name);
 
   await setDoc(doc(db,"players",name),{
-    name
+    name,
+    lastSeen: Date.now()
   });
+
+  startHeartbeat();
 
   show("player");
 };
 
-/* ---------------- ADMIN ACTIONS ---------------- */
+/* ---------------- HEARTBEAT ---------------- */
+
+function startHeartbeat(){
+  setInterval(async () => {
+    if(player){
+      await updateDoc(doc(db,"players",player),{
+        lastSeen: Date.now()
+      });
+    }
+  }, 5000);
+}
+
+/* ---------------- CLEAN EXIT ---------------- */
+
+window.addEventListener("beforeunload", () => {
+  if(player){
+    deleteDoc(doc(db,"players",player));
+  }
+});
+
+/* ---------------- ADMIN ---------------- */
 
 window.startGame = async () => {
 
@@ -282,14 +280,12 @@ window.sendAnswer = async () => {
 
 <body>
 
-<!-- LOGIN -->
 <div id="login" class="view">
 <h1>Alle mot Daniel</h1>
 <input id="name" placeholder="Kallenavn"><br>
 <button onclick="join()">Bli med</button>
 </div>
 
-<!-- PLAYER -->
 <div id="player" class="view">
 <h2 id="title"></h2>
 
@@ -300,7 +296,6 @@ window.sendAnswer = async () => {
 </div>
 </div>
 
-<!-- ADMIN LOBBY -->
 <div id="adminLobby" class="view">
 <h1>Alle mot Daniel</h1>
 
@@ -315,12 +310,10 @@ window.sendAnswer = async () => {
 <div id="playersList"></div>
 </div>
 
-<!-- ADMIN CONTROL -->
 <div id="adminControl" class="view">
 <h1>ADMIN</h1>
 
 <h2 id="currentQuestion"></h2>
-<h3 id="adminState"></h3>
 
 <button onclick="startAnswer()">Start svar</button>
 <button onclick="next()">Neste</button>
