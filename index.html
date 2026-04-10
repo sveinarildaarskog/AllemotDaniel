@@ -52,7 +52,8 @@ import {
   deleteDoc,
   onSnapshot,
   collection,
-  addDoc
+  addDoc,
+  getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 /* FIREBASE */
@@ -111,7 +112,7 @@ function generateQR(){
     + encodeURIComponent(url);
 }
 
-/* GAME LISTENER */
+/* GAME */
 function listenGame(){
   onSnapshot(doc(db,"game","state"), snap => {
 
@@ -120,6 +121,13 @@ function listenGame(){
     const data = snap.data();
 
     if(mode === "admin"){
+
+      if(data.gameState === "lobby"){
+        show("adminLobby");
+      } else {
+        show("adminControl");
+      }
+
       renderAdmin(data);
       return;
     }
@@ -133,7 +141,7 @@ function listenGame(){
   });
 }
 
-/* PLAYER FLOW */
+/* PLAYER */
 function renderPlayer(data){
 
   show("player");
@@ -141,24 +149,21 @@ function renderPlayer(data){
   const title = document.getElementById("title");
   const box = document.getElementById("answerBox");
 
-  const state = data.gameState;
-
   title.innerText = questions[data.currentRound] || "";
 
-  if(state === "lobby"){
+  if(data.gameState === "lobby"){
     title.innerText = "Venter på start...";
     box.style.display = "none";
   }
 
-  if(state === "question"){
+  if(data.gameState === "question"){
     hasAnswered = false;
     document.getElementById("slider").disabled = false;
     document.getElementById("answerBtn").style.display = "block";
     box.style.display = "none";
   }
 
-  if(state === "answering"){
-
+  if(data.gameState === "answering"){
     if(!hasAnswered){
       box.style.display = "block";
     } else {
@@ -167,13 +172,23 @@ function renderPlayer(data){
     }
   }
 
-  if(state === "locked"){
+  if(data.gameState === "locked"){
     box.style.display = "none";
     title.innerText = "Tiden er ute ✔";
   }
 }
 
-/* PLAYERS LIST */
+/* ADMIN */
+function renderAdmin(data){
+
+  document.getElementById("currentQuestion").innerText =
+    questions[data.currentRound] || "";
+
+  document.getElementById("timer").innerText =
+    data.timer || "";
+}
+
+/* PLAYERS */
 function listenPlayers(){
   onSnapshot(collection(db,"players"), snap => {
 
@@ -239,11 +254,14 @@ window.sendAnswer = async () => {
 
 /* ADMIN */
 window.startGame = async () => {
+
   await setDoc(doc(db,"game","state"),{
     gameState:"question",
     currentRound:0,
     timer:0
   });
+
+  show("adminControl");
 };
 
 window.startCountdown = async () => {
@@ -304,12 +322,13 @@ window.next = async () => {
 
 <div id="answerBox" style="display:none;">
 <input type="range" min="0" max="100" value="50" id="slider">
+<div id="sliderValue">50</div>
 <br>
 <button id="answerBtn" onclick="sendAnswer()">Svar</button>
 </div>
 </div>
 
-<!-- ADMIN -->
+<!-- ADMIN LOBBY -->
 <div id="adminLobby" class="view">
 <h1>Alle mot Daniel</h1>
 
@@ -318,19 +337,28 @@ window.next = async () => {
 </div>
 
 <button onclick="startGame()">Start spill</button>
-<button onclick="startCountdown()">Start 30 sek</button>
 
 <h3>Deltakere</h3>
 <div id="playersList"></div>
 </div>
 
+<!-- ADMIN CONTROL -->
 <div id="adminControl" class="view">
-<h2>ADMIN</h2>
+<h2 id="currentQuestion"></h2>
 
 <div class="bigTimer" id="timer"></div>
 
-<button onclick="next()">Neste oppgave</button>
+<button onclick="startCountdown()">Start 30 sek</button>
+<button onclick="next()">Neste</button>
 </div>
+
+<script>
+document.addEventListener("input", e=>{
+  if(e.target.id === "slider"){
+    document.getElementById("sliderValue").innerText = e.target.value;
+  }
+});
+</script>
 
 </body>
 </html>
