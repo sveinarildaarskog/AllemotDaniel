@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alle mot Daniel - FIXED</title>
+<title>Alle mot Daniel - FINAL FLOW</title>
 
 <style>
 body{
@@ -30,14 +30,13 @@ button,input,select{
   font-size:16px;
 }
 
-.slider{width:80%}
-
 .qr{
   background:white;
   padding:20px;
   border-radius:20px;
   width:320px;
   margin:20px auto;
+  color:black;
 }
 </style>
 
@@ -50,8 +49,7 @@ import {
   setDoc,
   updateDoc,
   onSnapshot,
-  collection,
-  addDoc
+  collection
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -68,8 +66,8 @@ const mode = new URLSearchParams(window.location.search).get("mode") || "player"
 let player = localStorage.getItem("player") || "";
 let role = localStorage.getItem("role") || "player";
 
+let state = "lobby";
 let round = 0;
-let state = "waiting";
 
 /* ---------------- VIEW ---------------- */
 
@@ -81,7 +79,7 @@ function show(id){
 /* ---------------- INIT ---------------- */
 
 window.addEventListener("load", () => {
-  listenState();
+  listenGame();
 
   if(mode === "admin"){
     show("adminLobby");
@@ -93,16 +91,16 @@ window.addEventListener("load", () => {
 
 /* ---------------- GAME STATE ---------------- */
 
-function listenState(){
+function listenGame(){
   onSnapshot(doc(db,"game","state"), snap=>{
     if(!snap.exists()) return;
 
     const data = snap.data();
+
     state = data.gameState;
     round = data.currentRound;
 
-    renderPlayer(data);
-    renderAdmin(data);
+    render(data);
   });
 }
 
@@ -111,57 +109,55 @@ function listenState(){
 function generateQR(){
   const url = window.location.origin + window.location.pathname + "?mode=join";
 
-  const img = document.getElementById("qr");
-  img.src = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(url);
+  document.getElementById("qr").src =
+    "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
+    + encodeURIComponent(url);
 }
 
-/* ---------------- ADMIN SCREENS ---------------- */
+/* ---------------- RENDER ---------------- */
 
-function renderAdmin(stateData){
+function render(data){
 
-  if(mode !== "admin") return;
+  if(mode === "admin"){
 
-  document.getElementById("adminState").innerText =
-    `State: ${stateData.gameState} | Runde: ${stateData.currentRound}`;
+    if(data.gameState === "lobby"){
+      show("adminLobby");
+    } else {
+      show("adminControl");
+    }
 
-  if(stateData.gameState === "waiting"){
-    show("adminLobby");
-  } else {
-    show("adminControl");
-  }
-}
-
-/* ---------------- PLAYER SCREENS ---------------- */
-
-function renderPlayer(stateData){
-
-  if(mode === "admin") return;
-
-  const title = document.getElementById("title");
-  const box = document.getElementById("answerBox");
-
-  if(stateData.gameState === "waiting"){
-    show("player");
-    title.innerText = "Venter på oppgave...";
-    box.style.display = "none";
+    document.getElementById("adminState").innerText =
+      `State: ${data.gameState} | Runde: ${data.currentRound}`;
   }
 
-  if(stateData.gameState === "question"){
-    show("player");
-    title.innerText = "Oppgave vises snart...";
-    box.style.display = "none";
-  }
+  if(mode !== "admin"){
 
-  if(stateData.gameState === "answering"){
-    show("player");
-    title.innerText = "SVAR NÅ!";
-    box.style.display = "block";
-  }
+    const title = document.getElementById("title");
+    const box = document.getElementById("answerBox");
 
-  if(stateData.gameState === "locked"){
-    show("player");
-    title.innerText = "Svar låst!";
-    box.style.display = "none";
+    if(data.gameState === "lobby"){
+      show("player");
+      title.innerText = "Venter på at spillet starter...";
+      box.style.display = "none";
+    }
+
+    if(data.gameState === "question"){
+      show("player");
+      title.innerText = "Oppgave vises...";
+      box.style.display = "none";
+    }
+
+    if(data.gameState === "answering"){
+      show("player");
+      title.innerText = "SVAR NÅ!";
+      box.style.display = "block";
+    }
+
+    if(data.gameState === "locked"){
+      show("player");
+      title.innerText = "Svar låst";
+      box.style.display = "none";
+    }
   }
 }
 
@@ -180,57 +176,41 @@ window.join = async () => {
 
   await setDoc(doc(db,"players",name),{
     name,
-    role,
-    online:true,
-    lastSeen:Date.now()
+    role
   });
 
   show("player");
 };
 
-/* ---------------- ADMIN CONTROLS ---------------- */
+/* ---------------- ADMIN CONTROL ---------------- */
 
-window.setQuestion = async () => {
+window.startGame = async () => {
   await setDoc(doc(db,"game","state"),{
     gameState:"question",
-    currentRound:round
+    currentRound:0
   });
 };
 
-window.startAnswer = async () => {
+window.setAnswer = async () => {
   await updateDoc(doc(db,"game","state"),{
     gameState:"answering"
   });
 };
 
-window.lockAnswers = async () => {
+window.lock = async () => {
   await updateDoc(doc(db,"game","state"),{
     gameState:"locked"
   });
 };
 
-window.nextRound = async () => {
+window.next = async () => {
   round++;
 
   await updateDoc(doc(db,"game","state"),{
-    gameState:"waiting",
+    gameState:"lobby",
     currentRound:round
   });
 };
-
-/* ---------------- ONLINE LIST ---------------- */
-
-onSnapshot(collection(db,"players"), snap=>{
-  const list = document.getElementById("players");
-  if(!list) return;
-
-  list.innerHTML = "";
-
-  snap.forEach(d=>{
-    const p = d.data();
-    list.innerHTML += `<div>${p.name} (${p.role})</div>`;
-  });
-});
 
 </script>
 </head>
@@ -253,18 +233,17 @@ onSnapshot(collection(db,"players"), snap=>{
 
 <!-- PLAYER -->
 <div id="player" class="view">
-<h2 id="title">Venter...</h2>
+<h2 id="title">...</h2>
 
 <div id="answerBox" style="display:none;">
 <input type="range" min="0" max="100" value="50" id="slider">
 <div id="val">50</div>
-<button onclick="sendAnswer()">Svar</button>
 </div>
 </div>
 
-<!-- ADMIN LOBBY (QR + START) -->
+<!-- ADMIN LOBBY (STARTSIDE!) -->
 <div id="adminLobby" class="view">
-<h1>Admin Lobby</h1>
+<h1>🔵 Bli med i spillet</h1>
 
 <div class="qr">
 <img id="qr">
@@ -272,7 +251,7 @@ onSnapshot(collection(db,"players"), snap=>{
 
 <h3 id="adminState"></h3>
 
-<button onclick="show('adminControl')">Start spill</button>
+<button onclick="startGame()">Start spillet</button>
 
 <h3>Deltakere</h3>
 <div id="players"></div>
@@ -280,23 +259,14 @@ onSnapshot(collection(db,"players"), snap=>{
 
 <!-- ADMIN CONTROL -->
 <div id="adminControl" class="view">
-<h1>Admin Control</h1>
+<h1>ADMIN</h1>
 
 <h3 id="adminState"></h3>
 
-<button onclick="setQuestion()">Vis oppgave</button>
-<button onclick="startAnswer()">Start svar</button>
-<button onclick="lockAnswers()">Lås</button>
-<button onclick="nextRound()">Neste</button>
+<button onclick="setAnswer()">Start svar</button>
+<button onclick="lock()">Lås</button>
+<button onclick="next()">Neste</button>
 </div>
-
-<script>
-document.addEventListener("input", e=>{
-  if(e.target.id==="slider"){
-    document.getElementById("val").innerText = e.target.value;
-  }
-});
-</script>
 
 </body>
 </html>
