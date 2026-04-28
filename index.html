@@ -1,102 +1,178 @@
 <!DOCTYPE html>
 <html lang="no">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Alle mot Daniel</title>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial;
-  background:#111;
-  color:white;
-  text-align:center;
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #111;
+  color: white;
+  text-align: center;
 }
 
-.view{display:none;padding:20px}
-
-button,input{
-  padding:10px;
-  margin:5px;
-  font-size:16px;
+.view {
+  display: none;
+  padding: 24px;
 }
 
-.qr{
-  background:white;
-  padding:20px;
-  border-radius:20px;
-  width:280px;
-  margin:20px auto;
-  color:black;
+button, input, select {
+  padding: 12px;
+  margin: 8px;
+  font-size: 18px;
+  border-radius: 8px;
+  border: none;
 }
 
-.bigTimer{
-  font-size:50px;
-  margin:20px;
+button {
+  cursor: pointer;
+  background: #18c964;
+  color: white;
+  font-weight: bold;
 }
 
-#playersList div{
-  padding:4px;
+button.secondary {
+  background: #444;
+}
+
+button.danger {
+  background: #c62828;
+}
+
+.qr {
+  background: white;
+  padding: 20px;
+  border-radius: 20px;
+  width: 300px;
+  margin: 20px auto;
+  color: black;
+}
+
+.qr img {
+  width: 280px;
+  height: 280px;
+}
+
+.slider {
+  width: 85%;
+  max-width: 500px;
+}
+
+.bigTimer {
+  font-size: 64px;
+  margin: 24px;
+  font-weight: bold;
+}
+
+.card {
+  background: #222;
+  padding: 20px;
+  border-radius: 18px;
+  max-width: 700px;
+  margin: 20px auto;
+}
+
+#playersList div {
+  padding: 6px;
+  font-size: 20px;
+}
+
+.resultBox {
+  font-size: 22px;
+  line-height: 1.6;
 }
 </style>
 
 <script type="module">
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import {
   getFirestore,
   doc,
   setDoc,
   updateDoc,
-  deleteDoc,
+  getDoc,
+  getDocs,
   onSnapshot,
-  collection,
-  addDoc,
-  getDoc
+  collection
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-/* FIREBASE */
+/* ================= FIREBASE ================= */
+
 const firebaseConfig = {
-  apiKey: "AIzaSyDE7W...",
+  apiKey: "AIzaSyDE7WQY2NZ8ZgAvD8Rm1Mq_owxddA8LHQM",
   authDomain: "alle-mot-konfirmanten.firebaseapp.com",
-  projectId: "alle-mot-konfirmanten"
+  projectId: "alle-mot-konfirmanten",
+  storageBucket: "alle-mot-konfirmanten.firebasestorage.app",
+  messagingSenderId: "265260090799",
+  appId: "1:265260090799:web:5530590ef58c2997ca5b5a"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* STATE */
+/* ================= BASIC STATE ================= */
+
 const mode = (new URLSearchParams(window.location.search).get("mode") || "player").toLowerCase();
 
-let player = "";
-let hasAnswered = false;
+let playerId = "";
+let playerName = "";
+let playerRole = "player";
+let currentState = null;
+let heartbeatTimer = null;
+let playersCache = [];
+let hasAnsweredRound = null;
+let countdownInterval = null;
 
-/* QUESTIONS */
+/* ================= QUESTIONS ================= */
+
 const questions = [
-  "Sengestrekk",
-  "Straffespark",
-  "Bottleflip",
-  "Vannpistol og telys",
-  "Biola bånnski",
-  "Vann på hodet",
-  "Triksekongen",
-  "Frisbeekast"
+  { title: "Sengestrekk", min: 0, max: 100, correct: 5.5667 },
+  { title: "Straffespark", min: 0, max: 100, correct: 5 },
+  { title: "Bottleflip", min: 0, max: 100, correct: 0 },
+  { title: "Vannpistol og telys", min: 0, max: 100, correct: null },
+  { title: "Biola bånnski", min: 0, max: 100, correct: null },
+  { title: "Vann på hodet", min: 0, max: 100, correct: null },
+  { title: "Triksekongen", min: 0, max: 100, correct: null },
+  { title: "Frisbeekast", min: 0, max: 100, correct: null }
 ];
 
-/* UI */
-function show(id){
-  document.querySelectorAll(".view").forEach(v=>v.style.display="none");
-  document.getElementById(id).style.display="block";
+/* ================= UI HELPERS ================= */
+
+function show(id) {
+  document.querySelectorAll(".view").forEach(v => v.style.display = "none");
+  document.getElementById(id).style.display = "block";
 }
 
-/* INIT */
-window.addEventListener("load", () => {
+function gameRef() {
+  return doc(db, "game", "state");
+}
 
+function sessionId() {
+  return currentState?.sessionId || "no-session";
+}
+
+function answerDocId(round, id) {
+  return `${sessionId()}_${round}_${id}`;
+}
+
+function playerDocId(id) {
+  return `${sessionId()}_${id}`;
+}
+
+function makeId() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/* ================= INIT ================= */
+
+window.addEventListener("load", async () => {
   listenGame();
   listenPlayers();
 
-  if(mode === "admin"){
+  if (mode === "admin") {
     show("adminLobby");
     generateQR();
   } else {
@@ -104,257 +180,528 @@ window.addEventListener("load", () => {
   }
 });
 
-/* QR */
-function generateQR(){
-  const url = window.location.origin + window.location.pathname + "?mode=player";
+/* ================= QR ================= */
+
+function generateQR() {
+  const url = window.location.origin + window.location.pathname;
   document.getElementById("qr").src =
-    "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
-    + encodeURIComponent(url);
+    "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" +
+    encodeURIComponent(url);
 }
 
-/* GAME */
-function listenGame(){
-  onSnapshot(doc(db,"game","state"), snap => {
+/* ================= GAME LISTENER ================= */
 
-    if(!snap.exists()) return;
+function listenGame() {
+  onSnapshot(gameRef(), snap => {
+    if (!snap.exists()) return;
 
-    const data = snap.data();
+    currentState = snap.data();
 
-    if(mode === "admin"){
-
-      if(data.gameState === "lobby"){
-        show("adminLobby");
-      } else {
-        show("adminControl");
-      }
-
-      renderAdmin(data);
-      return;
-    }
-
-    if(!player){
-      show("login");
-      return;
-    }
-
-    renderPlayer(data);
-  });
-}
-
-/* PLAYER */
-function renderPlayer(data){
-
-  show("player");
-
-  const title = document.getElementById("title");
-  const box = document.getElementById("answerBox");
-
-  title.innerText = questions[data.currentRound] || "";
-
-  if(data.gameState === "lobby"){
-    title.innerText = "Venter på start...";
-    box.style.display = "none";
-  }
-
-  if(data.gameState === "question"){
-    hasAnswered = false;
-    document.getElementById("slider").disabled = false;
-    document.getElementById("answerBtn").style.display = "block";
-    box.style.display = "none";
-  }
-
-  if(data.gameState === "answering"){
-    if(!hasAnswered){
-      box.style.display = "block";
+    if (mode === "admin") {
+      renderAdmin(currentState);
     } else {
-      box.style.display = "none";
-      title.innerText = "Vent på svar ⏳";
-    }
-  }
-
-  if(data.gameState === "locked"){
-    box.style.display = "none";
-    title.innerText = "Tiden er ute ✔";
-  }
-}
-
-/* ADMIN */
-function renderAdmin(data){
-
-  document.getElementById("currentQuestion").innerText =
-    questions[data.currentRound] || "";
-
-  document.getElementById("timer").innerText =
-    data.timer || "";
-}
-
-/* PLAYERS */
-function listenPlayers(){
-  onSnapshot(collection(db,"players"), snap => {
-
-    const list = document.getElementById("playersList");
-    if(!list) return;
-
-    list.innerHTML = "";
-
-    const now = Date.now();
-
-    snap.forEach(d=>{
-      const p = d.data();
-      if(now - (p.lastSeen || 0) < 10000){
-        list.innerHTML += `<div>👤 ${p.name}</div>`;
+      if (!playerId) {
+        show("login");
+        return;
       }
-    });
+      renderPlayer(currentState);
+    }
   });
 }
 
-/* JOIN */
+/* ================= PLAYER LIST ================= */
+
+function listenPlayers() {
+  onSnapshot(collection(db, "players"), snap => {
+    playersCache = [];
+    snap.forEach(d => playersCache.push(d.data()));
+    renderPlayersList();
+  });
+
+  setInterval(renderPlayersList, 1000);
+}
+
+function renderPlayersList() {
+  const list = document.getElementById("playersList");
+  if (!list || !currentState) return;
+
+  const now = Date.now();
+  const active = playersCache.filter(p =>
+    p.sessionId === currentState.sessionId &&
+    now - (p.lastSeen || 0) < 12000
+  );
+
+  list.innerHTML = active.length
+    ? active.map(p => `<div>👤 ${p.name} ${p.role === "daniel" ? "(Daniel)" : ""}</div>`).join("")
+    : "<div>Ingen deltakere ennå</div>";
+}
+
+/* ================= PLAYER FLOW ================= */
+
 window.join = async () => {
+  const name = document.getElementById("name").value.trim();
+  const role = document.getElementById("role").value;
 
-  const name = document.getElementById("name").value;
+  if (!name) {
+    alert("Skriv kallenavn");
+    return;
+  }
 
-  player = name;
-  hasAnswered = false;
+  if (!currentState || !currentState.sessionId) {
+    alert("Admin må trykke 'Nytt spill' først.");
+    return;
+  }
 
-  await setDoc(doc(db,"players",name),{
-    name,
+  playerId = makeId();
+  playerName = name;
+  playerRole = role;
+  hasAnsweredRound = null;
+
+  await setDoc(doc(db, "players", playerDocId(playerId)), {
+    id: playerId,
+    name: playerName,
+    role: playerRole,
+    sessionId: sessionId(),
     lastSeen: Date.now()
   });
 
-  setInterval(async () => {
-    await updateDoc(doc(db,"players",player),{
-      lastSeen: Date.now()
-    });
-  },5000);
-
-  show("player");
+  startHeartbeat();
+  renderPlayer(currentState);
 };
 
-/* SEND ANSWER */
-window.sendAnswer = async () => {
+function startHeartbeat() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
 
-  if(hasAnswered) return;
+  heartbeatTimer = setInterval(async () => {
+    if (!playerId || !currentState) return;
 
-  const val = document.getElementById("slider").value;
+    await updateDoc(doc(db, "players", playerDocId(playerId)), {
+      lastSeen: Date.now()
+    }).catch(() => {});
+  }, 4000);
+}
 
-  await addDoc(collection(db,"answers"),{
-    name: player,
-    value: Number(val),
+function renderPlayer(state) {
+  const round = state.currentRound || 0;
+  const question = questions[round];
+  const title = document.getElementById("playerTitle");
+  const answerBox = document.getElementById("answerBox");
+  const waitText = document.getElementById("waitText");
+  const slider = document.getElementById("slider");
+  const sliderValue = document.getElementById("sliderValue");
+  const answerBtn = document.getElementById("answerBtn");
+
+  show("player");
+
+  if (!question) {
+    title.innerText = "Spillet er ferdig";
+    answerBox.style.display = "none";
+    waitText.innerText = "Vent på sluttresultat.";
+    return;
+  }
+
+  slider.min = question.min;
+  slider.max = question.max;
+
+  if (state.phase === "lobby") {
+    title.innerText = "Venter på at spillet starter...";
+    answerBox.style.display = "none";
+    waitText.innerText = "";
+    return;
+  }
+
+  if (state.phase === "question") {
+    hasAnsweredRound = null;
+    title.innerText = question.title;
+    answerBox.style.display = "none";
+    waitText.innerText = "Oppgaven kommer snart.";
+    slider.disabled = false;
+    answerBtn.style.display = "inline-block";
+    slider.value = Math.round((question.min + question.max) / 2);
+    sliderValue.innerText = slider.value;
+    return;
+  }
+
+  if (state.phase === "answering") {
+    title.innerText = question.title;
+
+    if (hasAnsweredRound === round) {
+      answerBox.style.display = "none";
+      waitText.innerText = "Vent på svar ⏳";
+    } else {
+      answerBox.style.display = "block";
+      waitText.innerText = "";
+    }
+
+    return;
+  }
+
+  if (state.phase === "locked") {
+    if (hasAnsweredRound !== round) {
+      sendAnswer(true);
+    }
+    title.innerText = question.title;
+    answerBox.style.display = "none";
+    waitText.innerText = "Tiden er ute. Vent på fasit ⏳";
+    return;
+  }
+
+  if (state.phase === "result") {
+    title.innerText = question.title;
+    answerBox.style.display = "none";
+    waitText.innerText = "Resultatet vises på storskjerm.";
+    return;
+  }
+
+  if (state.phase === "final") {
+    title.innerText = "Spillet er ferdig 🎉";
+    answerBox.style.display = "none";
+    waitText.innerText = "Se sluttresultatet på storskjerm.";
+  }
+}
+
+window.sendAnswer = async (auto = false) => {
+  if (!currentState || !playerId) return;
+
+  const round = currentState.currentRound || 0;
+  if (hasAnsweredRound === round) return;
+
+  const val = Number(document.getElementById("slider").value);
+
+  await setDoc(doc(db, "answers", answerDocId(round, playerId)), {
+    sessionId: sessionId(),
+    round,
+    playerId,
+    name: playerName,
+    role: playerRole,
+    value: val,
+    auto,
     time: Date.now()
   });
 
-  hasAnswered = true;
-
-  document.getElementById("slider").disabled = true;
-  document.getElementById("answerBtn").style.display = "none";
-
-  document.getElementById("title").innerText = "Vent på svar ⏳";
+  hasAnsweredRound = round;
   document.getElementById("answerBox").style.display = "none";
+  document.getElementById("waitText").innerText = "Vent på svar ⏳";
 };
 
-/* ADMIN */
-window.startGame = async () => {
+/* ================= ADMIN FLOW ================= */
 
-  await setDoc(doc(db,"game","state"),{
-    gameState:"question",
-    currentRound:0,
-    timer:0
+function renderAdmin(state) {
+  const round = state.currentRound || 0;
+  const question = questions[round];
+
+  if (state.phase === "lobby") {
+    show("adminLobby");
+    renderPlayersList();
+    return;
+  }
+
+  show("adminGame");
+
+  document.getElementById("adminQuestion").innerText =
+    question ? question.title : "Ferdig";
+
+  document.getElementById("score").innerText =
+    `Daniel ${state.danielScore || 0} - ${state.crowdScore || 0} Publikum`;
+
+  document.getElementById("adminStatus").innerText =
+    `Runde ${round + 1} av ${questions.length} · ${state.phase}`;
+
+  const fasitInput = document.getElementById("correctInput");
+  if (question && question.correct !== null && state.phase === "question") {
+    fasitInput.value = question.correct;
+  }
+
+  updateTimerDisplay(state);
+
+  document.getElementById("startCountdownBtn").style.display =
+    state.phase === "question" ? "inline-block" : "none";
+
+  document.getElementById("showResultBtn").style.display =
+    state.phase === "locked" ? "inline-block" : "none";
+
+  document.getElementById("nextBtn").style.display =
+    state.phase === "result" ? "inline-block" : "none";
+
+  document.getElementById("resultBox").style.display =
+    state.phase === "result" || state.phase === "final" ? "block" : "none";
+
+  if (state.phase === "result") {
+    document.getElementById("resultBox").innerHTML = state.resultHtml || "";
+  }
+
+  if (state.phase === "final") {
+    document.getElementById("resultBox").innerHTML = state.finalHtml || "";
+  }
+}
+
+function updateTimerDisplay(state) {
+  const timerEl = document.getElementById("timer");
+
+  if (countdownInterval) clearInterval(countdownInterval);
+
+  if (state.phase !== "answering" || !state.timerEnd) {
+    timerEl.innerText = "";
+    return;
+  }
+
+  countdownInterval = setInterval(() => {
+    const left = Math.max(0, Math.ceil((state.timerEnd - Date.now()) / 1000));
+    timerEl.innerText = left;
+
+    if (left <= 0) {
+      clearInterval(countdownInterval);
+    }
+  }, 250);
+}
+
+window.resetGame = async () => {
+  const newSession = "session_" + Date.now();
+
+  await setDoc(gameRef(), {
+    phase: "lobby",
+    currentRound: 0,
+    sessionId: newSession,
+    danielScore: 0,
+    crowdScore: 0,
+    timerEnd: 0,
+    resultHtml: "",
+    finalHtml: ""
   });
+};
 
-  show("adminControl");
+window.startGame = async () => {
+  const snap = await getDoc(gameRef());
+  let state = snap.exists() ? snap.data() : null;
+
+  if (!state || !state.sessionId) {
+    await window.resetGame();
+  }
+
+  await updateDoc(gameRef(), {
+    phase: "question",
+    currentRound: 0,
+    timerEnd: 0,
+    resultHtml: "",
+    finalHtml: ""
+  });
 };
 
 window.startCountdown = async () => {
+  const timerEnd = Date.now() + 30000;
 
-  let time = 30;
-
-  await updateDoc(doc(db,"game","state"),{
-    gameState:"answering",
-    timer: time
+  await updateDoc(gameRef(), {
+    phase: "answering",
+    timerEnd
   });
 
-  const interval = setInterval(async () => {
+  setTimeout(async () => {
+    const snap = await getDoc(gameRef());
+    if (!snap.exists()) return;
 
-    time--;
-
-    await updateDoc(doc(db,"game","state"),{
-      timer: time
-    });
-
-    if(time <= 0){
-      clearInterval(interval);
-
-      await updateDoc(doc(db,"game","state"),{
-        gameState:"locked",
-        timer: 0
+    const state = snap.data();
+    if (state.phase === "answering") {
+      await updateDoc(gameRef(), {
+        phase: "locked",
+        timerEnd: 0
       });
     }
-
-  },1000);
+  }, 30500);
 };
 
-window.next = async () => {
+window.showResult = async () => {
+  const stateSnap = await getDoc(gameRef());
+  if (!stateSnap.exists()) return;
 
-  const snap = await getDoc(doc(db,"game","state"));
-  const data = snap.data();
+  const state = stateSnap.data();
+  const round = state.currentRound || 0;
+  const question = questions[round];
 
-  await updateDoc(doc(db,"game","state"),{
-    gameState:"question",
-    currentRound: data.currentRound + 1
+  const correct = Number(document.getElementById("correctInput").value);
+
+  const answersSnap = await getDocs(collection(db, "answers"));
+  const answers = [];
+
+  answersSnap.forEach(d => {
+    const a = d.data();
+    if (a.sessionId === state.sessionId && a.round === round) {
+      answers.push(a);
+    }
+  });
+
+  const crowdAnswers = answers.filter(a => a.role !== "daniel");
+  const danielAnswer = answers.find(a => a.role === "daniel");
+
+  const crowdAvg = crowdAnswers.length
+    ? crowdAnswers.reduce((sum, a) => sum + a.value, 0) / crowdAnswers.length
+    : null;
+
+  const danielValue = danielAnswer ? danielAnswer.value : null;
+
+  const crowdDiff = crowdAvg !== null ? Math.abs(crowdAvg - correct) : Infinity;
+  const danielDiff = danielValue !== null ? Math.abs(danielValue - correct) : Infinity;
+
+  let danielScore = state.danielScore || 0;
+  let crowdScore = state.crowdScore || 0;
+
+  const roundWinner = danielDiff <= crowdDiff ? "Daniel" : "Publikum";
+
+  if (roundWinner === "Daniel") danielScore++;
+  else crowdScore++;
+
+  for (const a of crowdAnswers) {
+    const diff = Math.abs(a.value - correct);
+    const statRef = doc(db, "stats", `${state.sessionId}_${a.playerId}`);
+    const oldSnap = await getDoc(statRef);
+    const old = oldSnap.exists() ? oldSnap.data() : { totalDiff: 0, rounds: 0 };
+
+    await setDoc(statRef, {
+      sessionId: state.sessionId,
+      playerId: a.playerId,
+      name: a.name,
+      totalDiff: (old.totalDiff || 0) + diff,
+      rounds: (old.rounds || 0) + 1
+    });
+  }
+
+  const resultHtml = `
+    <h2>Fasit: ${correct}</h2>
+    <p>Publikum snitt: ${crowdAvg !== null ? crowdAvg.toFixed(2) : "ingen svar"}</p>
+    <p>Daniel svarte: ${danielValue !== null ? danielValue : "ikke svart"}</p>
+    <h2>Rundevinner: ${roundWinner}</h2>
+    <h2>Stilling: Daniel ${danielScore} - ${crowdScore} Publikum</h2>
+  `;
+
+  await updateDoc(gameRef(), {
+    phase: "result",
+    danielScore,
+    crowdScore,
+    resultHtml
   });
 };
 
+window.nextRound = async () => {
+  const snap = await getDoc(gameRef());
+  if (!snap.exists()) return;
+
+  const state = snap.data();
+  const next = (state.currentRound || 0) + 1;
+
+  if (next >= questions.length) {
+    await finishGame(state);
+    return;
+  }
+
+  await updateDoc(gameRef(), {
+    phase: "question",
+    currentRound: next,
+    timerEnd: 0,
+    resultHtml: ""
+  });
+};
+
+async function finishGame(state) {
+  const statsSnap = await getDocs(collection(db, "stats"));
+  const stats = [];
+
+  statsSnap.forEach(d => {
+    const s = d.data();
+    if (s.sessionId === state.sessionId && s.rounds > 0) {
+      stats.push(s);
+    }
+  });
+
+  stats.sort((a, b) => (a.totalDiff / a.rounds) - (b.totalDiff / b.rounds));
+
+  const top5 = stats.slice(0, 5).map((s, i) => {
+    const avgDiff = s.totalDiff / s.rounds;
+    return `<p>${i + 1}. ${s.name} – snittavvik ${avgDiff.toFixed(2)}</p>`;
+  }).join("");
+
+  let winner = "Daniel";
+  if ((state.crowdScore || 0) > (state.danielScore || 0)) {
+    winner = "Publikum";
+  }
+
+  const finalHtml = `
+    <h1>Sluttresultat</h1>
+    <h2>Vinner: ${winner}</h2>
+    <h2>Daniel ${state.danielScore || 0} - ${state.crowdScore || 0} Publikum</h2>
+    <h2>Topp 5 deltakere</h2>
+    ${top5 || "<p>Ingen deltakerstatistikk</p>"}
+  `;
+
+  await updateDoc(gameRef(), {
+    phase: "final",
+    finalHtml
+  });
+}
 </script>
 </head>
 
 <body>
 
-<!-- LOGIN -->
 <div id="login" class="view">
-<h1>Alle mot Daniel</h1>
-<input id="name" placeholder="Kallenavn"><br>
-<button onclick="join()">Bli med</button>
+  <h1>Alle mot Daniel</h1>
+  <input id="name" placeholder="Kallenavn" />
+  <br />
+  <select id="role">
+    <option value="player">Deltaker</option>
+    <option value="daniel">Daniel</option>
+  </select>
+  <br />
+  <button onclick="join()">Bli med</button>
 </div>
 
-<!-- PLAYER -->
 <div id="player" class="view">
-<h2 id="title"></h2>
+  <div class="card">
+    <h2 id="playerTitle"></h2>
 
-<div id="answerBox" style="display:none;">
-<input type="range" min="0" max="100" value="50" id="slider">
-<div id="sliderValue">50</div>
-<br>
-<button id="answerBtn" onclick="sendAnswer()">Svar</button>
-</div>
+    <div id="answerBox" style="display:none;">
+      <input class="slider" type="range" id="slider" min="0" max="100" value="50" />
+      <h2 id="sliderValue">50</h2>
+      <button id="answerBtn" onclick="sendAnswer()">Svar</button>
+    </div>
+
+    <h2 id="waitText"></h2>
+  </div>
 </div>
 
-<!-- ADMIN LOBBY -->
 <div id="adminLobby" class="view">
-<h1>Alle mot Daniel</h1>
+  <h1>Alle mot Daniel</h1>
 
-<div class="qr">
-<img id="qr">
+  <div class="qr">
+    <img id="qr" />
+  </div>
+
+  <button onclick="resetGame()">Nytt spill</button>
+  <button onclick="startGame()">Start spill</button>
+
+  <h3>Deltakere</h3>
+  <div id="playersList"></div>
 </div>
 
-<button onclick="startGame()">Start spill</button>
+<div id="adminGame" class="view">
+  <h1 id="adminQuestion"></h1>
+  <h2 id="score"></h2>
+  <h3 id="adminStatus"></h3>
 
-<h3>Deltakere</h3>
-<div id="playersList"></div>
-</div>
+  <div class="bigTimer" id="timer"></div>
 
-<!-- ADMIN CONTROL -->
-<div id="adminControl" class="view">
-<h2 id="currentQuestion"></h2>
+  <div>
+    <input id="correctInput" type="number" placeholder="Fasit" step="0.01" />
+  </div>
 
-<div class="bigTimer" id="timer"></div>
+  <button id="startCountdownBtn" onclick="startCountdown()">Start 30 sek</button>
+  <button id="showResultBtn" onclick="showResult()">Se fasit</button>
+  <button id="nextBtn" onclick="nextRound()">Neste oppgave</button>
 
-<button onclick="startCountdown()">Start 30 sek</button>
-<button onclick="next()">Neste</button>
+  <div id="resultBox" class="resultBox card"></div>
 </div>
 
 <script>
-document.addEventListener("input", e=>{
-  if(e.target.id === "slider"){
+document.addEventListener("input", e => {
+  if (e.target.id === "slider") {
     document.getElementById("sliderValue").innerText = e.target.value;
   }
 });
